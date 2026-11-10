@@ -46,8 +46,9 @@ function exportCSV(rows){
 function bars(items, limit=9) {
   const top=items.slice(0,limit);
   if(!top.length)return '<p class="muted">No hay respuestas para este filtro.</p>';
-  const max=Math.max(1,...top.map(x=>x[1]));
-  return top.map(([name,count])=>'<div class="bar-item"><div class="bar-label"><span>'+escapeHTML(name)+'</span><strong>'+escapeHTML(count)+'</strong></div><div class="bar-track"><i style="width:'+Math.round(100*count/max)+'%"></i></div></div>').join("");
+  const numerical=x=>Number.parseFloat(String(x).replace("%","").trim())||0;
+  const max=Math.max(1,...top.map(x=>numerical(x[1])));
+  return top.map(([name,count])=>'<div class="bar-item"><div class="bar-label"><span>'+escapeHTML(name)+'</span><strong>'+escapeHTML(count)+'</strong></div><div class="bar-track"><i style="width:'+Math.round(100*numerical(count)/max)+'%"></i></div></div>').join("");
 }
 function rankCounts(map){
   return [...map.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],"es"));
