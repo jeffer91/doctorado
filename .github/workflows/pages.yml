@@ -24,6 +24,11 @@ jobs:
       - name: Obtener repositorio
         uses: actions/checkout@v4
 
+      - name: Validar instrumentos y archivos JavaScript
+        run: |
+          npm test
+          npm run check
+
       - name: Preparar sitio estático
         env:
           FIREBASE_WEB_CONFIG: ${{ secrets.FIREBASE_WEB_CONFIG }}
