@@ -1,0 +1,59 @@
+name: Publicar Doctorado en GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Obtener repositorio
+        uses: actions/checkout@v4
+
+      - name: Preparar sitio estático
+        env:
+          FIREBASE_WEB_CONFIG: ${{ secrets.FIREBASE_WEB_CONFIG }}
+        run: |
+          mkdir -p dist
+          cp index.html dist/
+          cp .nojekyll dist/
+          cp -R assets src dist/
+          node <<'NODE'
+          const fs = require('node:fs');
+          const raw = process.env.FIREBASE_WEB_CONFIG || "";
+          let config = null;
+          if (raw.trim()) {
+            config = JSON.parse(raw);
+            for (const key of ['apiKey','authDomain','projectId','appId']) {
+              if (!config[key]) throw new Error('Falta el campo Firebase: '+key);
+            }
+          }
+          fs.writeFileSync('dist/runtime-config.js', 'window.DOCTORADO_FIREBASE_CONFIG = ' + JSON.stringify(config) + ';\n');
+          console.log(config ? 'Configuración web de Firebase preparada' : 'Publicando vista sin integración Firebase (secreto pendiente)');
+          NODE
+
+      - name: Configurar Pages
+        uses: actions/configure-pages@v5
+
+      - name: Subir sitio
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: Publicar sitio
+        id: deployment
+        uses: actions/deploy-pages@v4
