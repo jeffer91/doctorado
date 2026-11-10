@@ -13,7 +13,7 @@ const questionMap=(stage,id)=>QUESTIONS[stage]?.find(q=>q.id===id);
 const avg=(arr)=>arr.length?arr.reduce((a,b)=>a+b,0)/arr.length:0;
 const formatDate=d=>d instanceof Date&&!Number.isNaN(d.valueOf())?d.toLocaleString("es-EC",{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}):"Sin fecha";
 const initialShell=html=>'<header class="site-header"><nav class="nav"><a href="#/" class="brand"><span class="brand-mark">D</span><span>Doctorado · ITSQMET<small>Investigación formativa</small></span></a><div class="nav-actions"><a href="#/" class="nav-link">Encuestas</a><a href="#/admin" class="nav-link">Administración</a></div></nav></header><main class="main"><div class="admin-layout">'+html+'</div></main>';
-function error(root,msg){root.innerHTML=initialShell('<a href="#/" class="page-back">← Volver</a><div class="surface"><section class="panel"><h2>No se pudo acceder</h2><div class="alert">'+escapeHTML(msg)+'</div><a href="#/admin" id="retry-admin" class="btn ghost">Reintentar</a></section></div>');root.querySelector("#retry-admin")?.addEventListener("click",()=>renderAdmin(root));}
+function error(root,msg){root.innerHTML=initialShell('<a href="#/" class="page-back">← Volver</a><div class="surface"><section class="panel"><h2>No se pudo acceder</h2><div class="alert">'+escapeHTML(msg)+'</div><button id="change-admin" class="btn outline">Cambiar cuenta</button> <a href="#/admin" id="retry-admin" class="btn ghost">Reintentar</a></section></div>');root.querySelector("#retry-admin")?.addEventListener("click",()=>renderAdmin(root));root.querySelector("#change-admin")?.addEventListener("click",async()=>{await signOutUser();renderAdmin(root);});}
 async function signedUser(){
   return new Promise(resolve=>{
     let off=()=>{};
