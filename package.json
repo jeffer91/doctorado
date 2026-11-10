@@ -1,0 +1,11 @@
+{
+  "name": "doctorado-encuestas-itsqmet",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Encuestas por etapas y panel de investigación doctoral",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check src/questions.js && node --check src/catalog.js && node --check src/firebase.js && node --check src/admin.js && node --check src/app.js"
+  }
+}
