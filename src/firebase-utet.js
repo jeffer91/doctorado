@@ -6,7 +6,6 @@ import { cruzarUtet } from "./utet-map.js";
 
 const SDK = "https://www.gstatic.com/firebasejs/12.6.0/";
 let cache = null;
-const delay = ms => new Promise(r => setTimeout(r,ms));
 function chunks(items, size = 25) {
   const out = [];
   for (let i=0; i<items.length; i+=size) out.push(items.slice(i,i+size));
