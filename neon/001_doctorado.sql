@@ -129,5 +129,15 @@ create table if not exists public.doctorado_clasificacion (
   cedula text primary key check (cedula ~ '^[0-9]{10}$'),
   carrera text not null default '' check (char_length(carrera) <= 120),
   modalidad text not null default '' check (modalidad in ('','articulo','complexivo','trabajo')),
-  actualizado timestamptz not null default now()
+  actualizado timestamptz not null default now(),
+  sede text not null default '' check (char_length(sede) <= 120),
+  periodo_id text not null default '' check (char_length(periodo_id) <= 120),
+  fuente text not null default 'manual' check (fuente in ('manual','firebase_utet')),
+  sincronizado_en timestamptz
 );
+
+-- Migración aditiva para bases que ya tienen doctorado_clasificacion:
+alter table public.doctorado_clasificacion add column if not exists sede text not null default '';
+alter table public.doctorado_clasificacion add column if not exists periodo_id text not null default '';
+alter table public.doctorado_clasificacion add column if not exists fuente text not null default 'manual';
+alter table public.doctorado_clasificacion add column if not exists sincronizado_en timestamptz;
