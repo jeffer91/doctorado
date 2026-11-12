@@ -131,3 +131,10 @@ section{margin:0 0 30px}
 @media(max-width:1180px){.dash-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.dash-filters .btn{grid-column:1/-1}.dashboard{grid-template-columns:208px minmax(0,1fr);gap:16px}.workspace{padding:20px 16px 50px}}
 @media(max-width:840px){.dashboard{display:block}.dash-sidebar{position:relative;top:auto;max-height:none;margin-bottom:20px;padding:14px}.dash-sidebar nav{display:flex;gap:10px;overflow:auto;scrollbar-width:thin}.dash-nav-group{flex:0 0 auto;margin:0}.dash-nav-group p{margin-bottom:5px}.dash-nav-item{white-space:nowrap}.dash-brand{margin:0 6px 11px}.dash-sidebar>.dash-nav-item{margin-top:8px}.dash-heading h1{font-size:26px}}
 @media(max-width:620px){.workspace{padding:16px 12px 48px}.dash-heading{align-items:flex-start;gap:10px}.dash-heading-actions{gap:8px}.dash-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.dash-stat{padding:13px}.dash-stat b{font-size:24px}.dash-two{grid-template-columns:1fr;gap:0}.dash-filters{grid-template-columns:1fr 1fr;padding:10px}.dash-filters label:first-child,.dash-filters label:nth-child(4){grid-column:1/-1}.dash-body section{padding:14px}.dash-body .row{grid-template-columns:minmax(95px,35%) 1fr 35px}}
+
+/* El período es una elección obligatoria y precede a todos los demás filtros. */
+.dash-filters .dash-filter-period{grid-column:1/-1;display:flex;align-items:center;gap:16px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.dash-filters .dash-filter-period strong{color:var(--navy);font-size:15px}
+.dash-filters .dash-filter-period select{max-width:460px;font-size:14px;font-weight:650;border-color:var(--gold)}
+.dash-table select{min-width:180px;max-width:300px;margin-right:8px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+@media(max-width:620px){.dash-filters .dash-filter-period{display:grid;gap:8px}.dash-filters .dash-filter-period select{max-width:100%}}
