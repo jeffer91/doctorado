@@ -77,3 +77,49 @@ create table if not exists public.doctorado_intentos (
   momento timestamptz not null default now()
 );
 create index if not exists doctorado_intentos_idx on public.doctorado_intentos (email, momento);
+
+-- Grupo de comparación: estudiantes sin la modalidad de artículo (examen o trabajo de titulación).
+create table if not exists public.doctorado_regulares (
+  id uuid primary key default gen_random_uuid(),
+  cedula text not null unique check (cedula ~ '^[0-9]{10}$'),
+  codigo text not null default '',
+  version smallint not null default 1 check (version = 1),
+  gusto smallint check (gusto between 1 and 5),
+  eleccion text check (eleccion in ('examen','trabajo','articulo')),
+  razon_si text check (razon_si in ('corto','investigar','publicar','carrera','aprender','no_elegiria','otra')),
+  razon_si_otra text check (char_length(razon_si_otra) <= 200),
+  razon_no text check (razon_no in ('preparacion','redaccion','tiempo','tema','examen','ninguna','otra')),
+  razon_no_otra text check (char_length(razon_no_otra) <= 200),
+  preparacion smallint check (preparacion between 1 and 5),
+  formacion smallint check (formacion between 1 and 5),
+  dificultad text check (dificultad in ('tema','bibliografia','metodologia','analisis','redaccion','tiempo','otra')),
+  dificultad_otra text check (char_length(dificultad_otra) <= 200),
+  apoyo text check (apoyo in ('metodologia','tutor','ejemplos','tiempo','talleres','otra')),
+  apoyo_otra text check (char_length(apoyo_otra) <= 200),
+  aporte_articulo smallint check (aporte_articulo between 1 and 5),
+  aporte_examen smallint check (aporte_examen between 1 and 5),
+  omitidas text[] not null default '{}',
+  origen text not null default 'web' check (origen in ('web','respaldo')),
+  created_at timestamptz not null default now(),
+  constraint doctorado_reg_omitidas check (omitidas <@ array['gusto','eleccion','razon_si','razon_no','preparacion','formacion','dificultad','apoyo','aporte_articulo','aporte_examen']),
+  constraint doctorado_reg_completa check (
+        (gusto is not null) <> ('gusto' = any(omitidas))
+    and (eleccion is not null) <> ('eleccion' = any(omitidas))
+    and (razon_si is not null) <> ('razon_si' = any(omitidas))
+    and (razon_no is not null) <> ('razon_no' = any(omitidas))
+    and (preparacion is not null) <> ('preparacion' = any(omitidas))
+    and (formacion is not null) <> ('formacion' = any(omitidas))
+    and (dificultad is not null) <> ('dificultad' = any(omitidas))
+    and (apoyo is not null) <> ('apoyo' = any(omitidas))
+    and (aporte_articulo is not null) <> ('aporte_articulo' = any(omitidas))
+    and (aporte_examen is not null) <> ('aporte_examen' = any(omitidas))
+    and (razon_si_otra is null or razon_si = 'otra')
+    and (razon_no_otra is null or razon_no = 'otra')
+    and (dificultad_otra is null or dificultad = 'otra')
+    and (apoyo_otra is null or apoyo = 'otra')
+  )
+);
+
+drop trigger if exists doctorado_preparar on public.doctorado_regulares;
+create trigger doctorado_preparar before insert on public.doctorado_regulares
+for each row execute function public.doctorado_preparar();

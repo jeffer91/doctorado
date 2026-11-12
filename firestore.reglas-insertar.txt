@@ -12,28 +12,47 @@ match /doctorado_respuestas/{respuestaId} {
 
   function escala(v) { return v == null || (v is int && v >= 1 && v <= 5); }
 
-  function datosValidos() {
-    let a = request.resource.data;
-    let r = a.r;
-    return a.keys().hasOnly(["etapa", "cedula", "r", "consent", "schemaVersion", "anonUid", "createdAt"])
-      && a.keys().hasAll(["etapa", "cedula", "r", "consent", "schemaVersion", "anonUid", "createdAt"])
-      && respuestaId.matches("^[a-f0-9]{64}$")
-      && a.etapa in ["inicio", "proceso", "final"]
-      && a.cedula is string && a.cedula.matches("^[0-9]{10}$")
-      && a.consent == true
-      && a.schemaVersion == 2
-      && a.anonUid == request.auth.uid
-      && a.createdAt == request.time
-      && r is map
-      && r.keys().hasOnly(["se1","se2","se3","se4","se5","p6","p7","horas","horas_ns","dificultad","dificultad_otra","ia","omitidas"])
+  function texto(v) { return v == null || (v is string && v.size() <= 200); }
+
+  // Encuestas del proceso por artículo académico (inicio, proceso, final).
+  function articuloValido(r) {
+    return r.keys().hasOnly(["se1","se2","se3","se4","se5","p6","p7","horas","horas_ns","dificultad","dificultad_otra","ia","omitidas"])
       && r.keys().hasAll(["se1","se2","se3","se4","se5","p6","p7","horas","horas_ns","dificultad","dificultad_otra","ia","omitidas"])
       && escala(r.se1) && escala(r.se2) && escala(r.se3) && escala(r.se4) && escala(r.se5)
       && escala(r.p6) && escala(r.p7) && escala(r.ia)
       && (r.horas == null || (r.horas is number && r.horas >= 0 && r.horas <= 100))
       && r.horas_ns is bool
       && (r.dificultad == null || r.dificultad in ["tema","bibliografia","metodologia","analisis","redaccion","tiempo","tecnologia","otra"])
-      && (r.dificultad_otra == null || (r.dificultad_otra is string && r.dificultad_otra.size() <= 200))
-      && r.omitidas is list && r.omitidas.size() <= 10;
+      && texto(r.dificultad_otra);
+  }
+
+  // Encuesta de estudiantes sin la modalidad de artículo (examen o trabajo de titulación).
+  function regularValido(r) {
+    return r.keys().hasOnly(["gusto","eleccion","razon_si","razon_si_otra","razon_no","razon_no_otra","preparacion","formacion","dificultad","dificultad_otra","apoyo","apoyo_otra","aporte_articulo","aporte_examen","omitidas"])
+      && r.keys().hasAll(["gusto","eleccion","razon_si","razon_si_otra","razon_no","razon_no_otra","preparacion","formacion","dificultad","dificultad_otra","apoyo","apoyo_otra","aporte_articulo","aporte_examen","omitidas"])
+      && escala(r.gusto) && escala(r.preparacion) && escala(r.formacion) && escala(r.aporte_articulo) && escala(r.aporte_examen)
+      && (r.eleccion == null || r.eleccion in ["examen","trabajo","articulo"])
+      && (r.razon_si == null || r.razon_si in ["corto","investigar","publicar","carrera","aprender","no_elegiria","otra"])
+      && (r.razon_no == null || r.razon_no in ["preparacion","redaccion","tiempo","tema","examen","ninguna","otra"])
+      && (r.dificultad == null || r.dificultad in ["tema","bibliografia","metodologia","analisis","redaccion","tiempo","otra"])
+      && (r.apoyo == null || r.apoyo in ["metodologia","tutor","ejemplos","tiempo","talleres","otra"])
+      && texto(r.razon_si_otra) && texto(r.razon_no_otra) && texto(r.dificultad_otra) && texto(r.apoyo_otra);
+  }
+
+  function datosValidos() {
+    let a = request.resource.data;
+    return a.keys().hasOnly(["etapa", "cedula", "r", "consent", "schemaVersion", "anonUid", "createdAt"])
+      && a.keys().hasAll(["etapa", "cedula", "r", "consent", "schemaVersion", "anonUid", "createdAt"])
+      && respuestaId.matches("^[a-f0-9]{64}$")
+      && a.cedula is string && a.cedula.matches("^[0-9]{10}$")
+      && a.consent == true
+      && a.schemaVersion == 2
+      && a.anonUid == request.auth.uid
+      && a.createdAt == request.time
+      && a.r is map
+      && a.r.omitidas is list && a.r.omitidas.size() <= 10
+      && ((a.etapa in ["inicio", "proceso", "final"] && articuloValido(a.r))
+          || (a.etapa == "regulares" && regularValido(a.r)));
   }
 
   allow get, list: if esAdminDoctorado();

@@ -3,7 +3,6 @@ import { FIREBASE } from "./config.js";
 
 const V = "https://www.gstatic.com/firebasejs/12.6.0/";
 const COL = "doctorado_respuestas";
-const CAMPOS = ["se1", "se2", "se3", "se4", "se5", "p6", "p7", "horas", "horas_ns", "dificultad", "dificultad_otra", "ia", "omitidas"];
 let cache = null;
 
 export function firebaseReady() {
@@ -29,10 +28,9 @@ export async function backupSurvey(row) {
   const { f, u, db, auth } = await sdk();
   if (auth.currentUser && !auth.currentUser.isAnonymous) await u.signOut(auth);
   const user = auth.currentUser || (await u.signInAnonymously(auth)).user;
-  const r = {};
-  for (const k of CAMPOS) r[k] = row[k] ?? null;
-  await f.setDoc(f.doc(db, COL, await docId(row.etapa, row.cedula)), {
-    etapa: row.etapa, cedula: row.cedula, r, consent: true,
+  const { etapa, cedula, ...r } = row;
+  await f.setDoc(f.doc(db, COL, await docId(etapa, cedula)), {
+    etapa, cedula, r, consent: true,
     schemaVersion: 2, anonUid: user.uid, createdAt: f.serverTimestamp()
   });
   return true;

@@ -54,6 +54,22 @@ test("panel: acceso, lectura, importación y cambio de clave", async () => {
   assert.equal((await call("POST", "/admin/salir", null, token)).status, 200);
   assert.equal((await call("GET", "/admin/respuestas", null, token)).status, 401);
 });
+test("encuesta de estudiantes regulares", async () => {
+  const reg = { etapa: "regulares", cedula: "1710034065", omitidas: ["razon_no", "aporte_examen"], gusto: 5, eleccion: "articulo", razon_si: "otra", razon_si_otra: "x", razon_no: null, preparacion: 3, formacion: 2, dificultad: "tema", apoyo: "tutor", aporte_articulo: 4, aporte_examen: null };
+  assert.equal((await call("POST", "/respuestas", reg)).status, 201);
+  assert.equal((await call("POST", "/respuestas", reg)).status, 409);
+  assert.equal((await call("POST", "/respuestas", { ...reg, cedula: "0102030400", dificultad: "tecnologia" })).status, 400);
+  assert.equal((await call("POST", "/respuestas", { ...reg, cedula: "0102030400", eleccion: null })).status, 400);
+  const { token } = await (await call("POST", "/admin/login", { email: "a@b.c", clave: "otraclave99" })).json();
+  const d = await (await call("GET", "/admin/respuestas", null, token)).json();
+  assert.equal(d.regulares.length, 1);
+  assert.equal(d.regulares[0].razon_si_otra, "x");
+  assert.deepEqual(d.regulares[0].omitidas, ["razon_no", "aporte_examen"]);
+  assert.equal(d.regulares[0].codigo, d.filas[0].codigo); // mismo seudónimo que en las otras encuestas
+  assert.equal(d.filas[0].horas === null || typeof d.filas[0].horas === "number", true);
+  const imp = await (await call("POST", "/admin/importar", { filas: [reg, { ...reg, cedula: "0102030400" }] }, token)).json();
+  assert.equal(imp.guardadas, 1);
+});
 test("bloqueo tras muchos intentos fallidos", async () => {
   let last;
   for (let i = 0; i < 9; i++) last = (await call("POST", "/admin/login", { email: "x@y.z", clave: "no" })).status;

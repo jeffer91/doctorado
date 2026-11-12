@@ -1,12 +1,13 @@
 // src/admin.js — Panel privado. Lee de Neon (principal) y revisa el respaldo de Firebase.
 import { API, ADMIN_EMAIL } from "./config.js";
-import { STAGES, FRECUENCIA, DIFICULTADES } from "./questions.js";
+import { STAGES, ARTICULO, QUESTIONS, FRECUENCIA, DIFICULTADES } from "./questions.js";
 import { firebaseReady, fetchBackup, firebaseError } from "./firebase.js";
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const COLS = ["codigo", "etapa", "created_at", "version", "se1", "se2", "se3", "se4", "se5", "p6", "p7", "horas", "horas_ns", "dificultad", "dificultad_otra", "ia", "omitidas", "origen"];
+const COLS_REG = ["codigo", "created_at", "version", "gusto", "eleccion", "razon_si", "razon_si_otra", "razon_no", "razon_no_otra", "preparacion", "formacion", "dificultad", "dificultad_otra", "apoyo", "apoyo_otra", "aporte_articulo", "aporte_examen", "omitidas", "origen"];
 const KEY = "doctorado:admin";
-let root = null, rows = [], filter = "todas", msg = "";
+let root = null, rows = [], regs = [], filter = "todas", msg = "";
 
 const token = () => { try { return sessionStorage.getItem(KEY); } catch { return null; } };
 const setToken = t => { try { t ? sessionStorage.setItem(KEY, t) : sessionStorage.removeItem(KEY); } catch { /* sin almacenamiento */ } };
@@ -56,7 +57,7 @@ function login(error = "") {
   });
 }
 
-async function loadRows() { rows = (await api("/admin/respuestas")).filas; }
+async function loadRows() { const d = await api("/admin/respuestas"); rows = d.filas; regs = d.regulares || []; }
 
 const mean = a => a.length ? a.reduce((x, y) => x + Number(y), 0) / a.length : null;
 const fmt = n => n === null ? "—" : n.toFixed(1).replace(".", ",");
@@ -67,28 +68,46 @@ function bars(items, max, unit = "") {
 }
 const SE = [["se1", "Problema"], ["se2", "Bibliografía"], ["se3", "Metodología"], ["se4", "Análisis"], ["se5", "Redacción"]];
 
+const section = (title, inner) => '<section><h3>' + esc(title) + '</h3>' + inner + '</section>';
+const maxOf = d => Math.max(1, ...d.map(x => x[1]));
+const dist = (data, k, options, sort = false) => {
+  const d = options.map(([code, label]) => [label, data.filter(r => String(r[k]) === String(code)).length]);
+  return sort ? d.sort((x, y) => y[1] - x[1]) : d;
+};
+const vals = (data, k) => data.map(r => r[k]).filter(v => v !== null && v !== undefined);
+
+function chartsArticulo(data) {
+  const dif = dist(data, "dificultad", DIFICULTADES, true), ia = dist(data, "ia", FRECUENCIA);
+  return section("Autoeficacia · promedio 1–5", bars(SE.map(([k, l]) => { const m = mean(vals(data, k)); return [l, m, fmt(m)]; }), 5)) +
+    section("Dificultad principal", bars(dif, maxOf(dif))) +
+    section("Uso de IA", bars(ia, maxOf(ia))) +
+    section("Horas semanales", '<p class="big">' + fmt(mean(vals(data, "horas"))) + ' <small>promedio · ' + vals(data, "horas").length + ' respuestas</small></p>');
+}
+
+// Estudiantes sin la modalidad de artículo: una gráfica por pregunta, en el orden de la encuesta.
+const CORTAS = { gusto: "Le hubiera gustado el artículo", eleccion: "Modalidad que habría elegido", razon_si: "Razón para elegirlo", razon_no: "Razón para no elegirlo", dificultad: "Parte más difícil", apoyo: "Apoyo que necesitaría" };
+function chartsRegulares(data) {
+  const medias = [["preparacion", "Preparación para el artículo"], ["formacion", "La carrera enseñó a investigar"], ["aporte_articulo", "Aporte del artículo"], ["aporte_examen", "Aporte del examen"]];
+  return QUESTIONS.regulares.filter(q => CORTAS[q.id]).map(q => {
+    const d = dist(data, q.id, q.options, q.type === "choice" && q.id !== "eleccion");
+    return section(CORTAS[q.id], bars(d, maxOf(d)));
+  }).join("") +
+    section("Promedios 1–5", bars(medias.map(([k, l]) => { const m = mean(vals(data, k)); return [l, m, fmt(m)]; }), 5));
+}
+
 function panel() {
-  const data = filter === "todas" ? rows : rows.filter(r => r.etapa === filter);
+  const reg = filter === "regulares";
+  const data = reg ? regs : filter === "todas" ? rows : rows.filter(r => r.etapa === filter);
   const count = k => rows.filter(r => r.etapa === k).length;
-  const vals = k => data.map(r => r[k]).filter(v => v !== null && v !== undefined);
-  const dist = (k, options) => options.map(([code, label]) => [label, data.filter(r => String(r[k]) === String(code)).length]);
-  const maxOf = d => Math.max(1, ...d.map(x => x[1]));
-  const dif = dist("dificultad", DIFICULTADES).sort((a, b) => b[1] - a[1]);
-  const ia = dist("ia", FRECUENCIA);
   const base = location.origin + location.pathname;
+  const tile = (key, n, label, extra = "") => '<button class="tile' + extra + (filter === key ? " on" : "") + '" data-f="' + key + '"><b>' + n + '</b><span>' + esc(label) + '</span></button>';
 
   frame('<div class="head"><h1>Resultados</h1><button class="link" data-a="out">Salir</button></div>' +
-    '<div class="tiles">' +
-    '<button class="tile' + (filter === "todas" ? " on" : "") + '" data-f="todas"><b>' + rows.length + '</b><span>Total</span></button>' +
-    Object.entries(STAGES).map(([k, s]) => '<button class="tile' + (filter === k ? " on" : "") + '" data-f="' + k + '"><b>' + count(k) + '</b><span>' + esc(s.label) + '</span></button>').join("") +
-    '</div>' +
-    (data.length ? (
-      '<section><h3>Autoeficacia · promedio 1–5</h3>' + bars(SE.map(([k, l]) => { const m = mean(vals(k)); return [l, m, fmt(m)]; }), 5) + '</section>' +
-      '<section><h3>Dificultad principal</h3>' + bars(dif, maxOf(dif)) + '</section>' +
-      '<section><h3>Uso de IA</h3>' + bars(ia, maxOf(ia)) + '</section>' +
-      '<section><h3>Horas semanales</h3><p class="big">' + fmt(mean(vals("horas"))) + ' <small>promedio · ' + vals("horas").length + ' respuestas</small></p></section>'
-    ) : '<p class="lead">Aún no hay respuestas.</p>') +
-    '<section><h3>Exportar</h3><div class="actions">' +
+    '<div class="tiles">' + tile("todas", rows.length, "Artículo") +
+    ARTICULO.map(k => tile(k, count(k), STAGES[k].label)).join("") +
+    tile("regulares", regs.length, STAGES.regulares.label, " full") + '</div>' +
+    (data.length ? (reg ? chartsRegulares(data) : chartsArticulo(data)) : '<p class="lead">Aún no hay respuestas.</p>') +
+    '<section><h3>Exportar' + (reg ? " · examen o tesis" : " · artículo") + '</h3><div class="actions">' +
     '<button class="btn ghost" data-a="csv">CSV seudonimizado</button>' +
     '<button class="btn ghost" data-a="csvid">CSV con cédula</button></div></section>' +
     '<section><h3>Respaldo Firebase</h3><div class="actions"><button class="btn ghost" data-a="backup"' + (firebaseReady() ? "" : " disabled") + '>' + (firebaseReady() ? "Revisar respaldo" : "Firebase sin configurar") + '</button></div>' +
@@ -133,9 +152,9 @@ async function backup(b) {
   b.disabled = true; say("Revisando…");
   try {
     const copies = await fetchBackup();
-    const have = new Set(rows.map(r => r.etapa + "|" + r.cedula));
+    const have = new Set([...rows.map(r => r.etapa + "|" + r.cedula), ...regs.map(r => "regulares|" + r.cedula)]);
     const missing = copies.filter(x => !have.has(x.etapa + "|" + x.cedula));
-    if (!missing.length) return say("Firebase: " + copies.length + " · Neon: " + rows.length + ". Nada por recuperar.");
+    if (!missing.length) return say("Firebase: " + copies.length + " · Neon: " + (rows.length + regs.length) + ". Nada por recuperar.");
     if (!confirm("Hay " + missing.length + " respuesta(s) solo en Firebase. ¿Copiarlas a Neon?")) return say("Faltan " + missing.length + " en Neon.");
     let ok = 0;
     for (let i = 0; i < missing.length; i += 200) ok += (await api("/admin/importar", { filas: missing.slice(i, i + 200) })).guardadas;
@@ -145,14 +164,15 @@ async function backup(b) {
 }
 
 function csv(withId) {
-  const cols = withId ? ["cedula", ...COLS] : COLS;
+  const reg = filter === "regulares";
+  const cols = [...(withId ? ["cedula"] : []), ...(reg ? COLS_REG : COLS)];
   const cell = v => {
     if (v === null || v === undefined) return "";
     let s = Array.isArray(v) ? v.join("|") : String(v);
     if (typeof v === "string" && /^[=+\-@]/.test(s)) s = "'" + s; // evita fórmulas al abrir en Excel
     return /[",;\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
-  const data = filter === "todas" ? rows : rows.filter(r => r.etapa === filter);
+  const data = reg ? regs : filter === "todas" ? rows : rows.filter(r => r.etapa === filter);
   const text = "﻿" + [cols.join(","), ...data.map(r => cols.map(k => cell(r[k])).join(","))].join("\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));

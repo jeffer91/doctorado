@@ -1,10 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { STAGES, QUESTIONS, IDS, cedulaValida, toRow } from "../src/questions.js";
+import { STAGES, ARTICULO, QUESTIONS, IDS, cedulaValida, toRow } from "../src/questions.js";
 
-test("tres etapas con diez preguntas y los mismos códigos", () => {
-  assert.deepEqual(Object.keys(STAGES), ["inicio", "proceso", "final"]);
-  for (const stage of Object.keys(STAGES)) assert.deepEqual(QUESTIONS[stage].map(q => q.id), IDS, stage);
+test("cuatro encuestas de diez preguntas; las tres de artículo comparten códigos", () => {
+  assert.deepEqual(Object.keys(STAGES), ["inicio", "proceso", "final", "regulares"]);
+  for (const stage of Object.keys(STAGES)) assert.equal(QUESTIONS[stage].length, 10, stage);
+  for (const stage of ARTICULO) assert.deepEqual(QUESTIONS[stage].map(q => q.id), IDS, stage);
+  assert.equal(new Set(QUESTIONS.regulares.map(q => q.id)).size, 10);
 });
 
 test("se1–se5 son idénticas en las tres etapas", () => {

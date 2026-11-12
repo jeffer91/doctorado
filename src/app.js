@@ -43,7 +43,7 @@ function labelOf(q, v) {
   if (v === NR) return "Prefiero no responder";
   if (q.type === "hours") return v === NS ? "No sé" : v + " h";
   const o = q.options.find(x => String(x[0]) === String(v));
-  if (q.id === "dificultad" && v === "otra" && st.answers.dificultad_otra) return "Otra: " + st.answers.dificultad_otra;
+  if (v === "otra" && st.answers[q.id + "_otra"]) return "Otra: " + st.answers[q.id + "_otra"];
   return o ? o[1] : "";
 }
 
@@ -51,7 +51,7 @@ function start() {
   const s = STAGES[st.stage];
   if (!ready()) return page('<h1 tabindex="-1">' + esc(s.title) + '</h1><p class="lead">La encuesta no está disponible por ahora.</p>');
   page('<p class="eyebrow">Encuesta · ' + esc(s.label) + '</p><h1 tabindex="-1">' + esc(s.title) + '</h1>' +
-    '<p class="lead">10 preguntas · 3 minutos.</p>' +
+    '<p class="lead">' + (s.intro ? esc(s.intro) + " " : "") + '10 preguntas · 3 minutos.</p>' +
     '<form data-form="start" novalidate><label class="field">Cédula<input name="cedula" inputmode="numeric" autocomplete="off" maxlength="10" pattern="[0-9]{10}" placeholder="10 dígitos" value="' + esc(st.cedula) + '" required></label>' +
     '<p class="note">Participar es voluntario y no afecta tus notas ni tu titulación. Tus respuestas se usan solo para investigación; tu cédula se guarda protegida para vincular datos académicos.</p>' +
     '<label class="check"><input type="checkbox" name="consent"' + (st.consent ? " checked" : "") + '><span>Acepto participar</span></label>' +
@@ -69,8 +69,8 @@ function question() {
     body = '<div class="list" role="group">' + q.options.map(o =>
       '<button class="opt' + (String(v) === String(o[0]) ? " on" : "") + '" data-val="' + esc(o[0]) + '">' +
       (q.type === "scale" ? '<b>' + o[0] + '</b>' : "") + '<em>' + esc(o[1]) + '</em></button>').join("") + '</div>';
-    if (q.id === "dificultad" && v === "otra") {
-      body += '<form data-form="otra"><label class="field">¿Cuál? (opcional)<input name="otra" maxlength="200" value="' + esc(st.answers.dificultad_otra || "") + '"></label><button class="btn" type="submit">Continuar</button></form>';
+    if (q.type === "choice" && v === "otra") {
+      body += '<form data-form="otra"><label class="field">¿Cuál? (opcional)<input name="otra" maxlength="200" value="' + esc(st.answers[q.id + "_otra"] || "") + '"></label><button class="btn" type="submit">Continuar</button></form>';
     }
   }
   page('<p class="eyebrow">' + (st.step + 1) + ' de ' + qs.length + '</p><h2 tabindex="-1">' + esc(q.text) + '</h2>' + body +
@@ -119,9 +119,9 @@ root.addEventListener("click", async ev => {
     if (busy) return;
     const q = QUESTIONS[st.stage][st.step];
     st.answers[q.id] = b.dataset.val;
-    if (q.id === "dificultad" && b.dataset.val !== "otra") delete st.answers.dificultad_otra;
+    if (b.dataset.val !== "otra") delete st.answers[q.id + "_otra"];
     save();
-    if (q.id === "dificultad" && b.dataset.val === "otra") return render();
+    if (q.type === "choice" && b.dataset.val === "otra") return render();
     root.querySelectorAll("[data-val]").forEach(x => x.classList.toggle("on", x === b));
     busy = true;
     return setTimeout(() => { busy = false; next(); }, 160);
@@ -164,7 +164,7 @@ root.addEventListener("submit", ev => {
     return next();
   }
   if (f.dataset.form === "otra") {
-    st.answers.dificultad_otra = String(data.get("otra") || "").trim().slice(0, 200);
+    st.answers[QUESTIONS[st.stage][st.step].id + "_otra"] = String(data.get("otra") || "").trim().slice(0, 200);
     return next();
   }
 });

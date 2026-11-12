@@ -5,8 +5,14 @@ export const VERSION = 1;
 export const STAGES = {
   inicio: { label: "Inicio", title: "Estoy iniciando" },
   proceso: { label: "En proceso", title: "Voy en la mitad" },
-  final: { label: "Finalización", title: "Ya terminé" }
+  final: { label: "Finalización", title: "Ya terminé" },
+  // Grupo de comparación: estudiantes que no tuvieron la modalidad de artículo académico.
+  regulares: {
+    label: "Examen o tesis", title: "Me gradúo por examen o tesis",
+    intro: "El artículo académico es una modalidad de titulación: un trabajo de investigación de 6 a 15 páginas."
+  }
 };
+export const ARTICULO = ["inicio", "proceso", "final"]; // etapas del proceso por artículo académico
 // Rutas antiguas que siguen funcionando.
 export const ALIASES = { desarrollo: "proceso", finalizados: "final", finalizacion: "final", fin: "final" };
 
@@ -28,7 +34,39 @@ export const DIFICULTADES = [
   ["otra", "Otra"]
 ];
 
+const GUSTO = escala("Definitivamente no", "Probablemente no", "No estoy seguro", "Probablemente sí", "Definitivamente sí");
+const NADA_MUCHO = escala("Nada", "Poco", "Algo", "Bastante", "Mucho");
+export const ELECCIONES = [["examen", "Examen complexivo"], ["trabajo", "Trabajo de titulación"], ["articulo", "Artículo académico"]];
+export const RAZONES_SI = [
+  ["corto", "Es un trabajo corto"],
+  ["investigar", "Me interesa investigar"],
+  ["publicar", "Podría publicarlo"],
+  ["carrera", "Aporta más a mi carrera"],
+  ["aprender", "Aprendería más que con un examen"],
+  ["no_elegiria", "No lo elegiría"],
+  ["otra", "Otra"]
+];
+export const RAZONES_NO = [
+  ["preparacion", "No me siento preparado para investigar"],
+  ["redaccion", "Me cuesta la redacción científica"],
+  ["tiempo", "Falta de tiempo"],
+  ["tema", "No sabría qué tema investigar"],
+  ["examen", "Prefiero rendir un examen"],
+  ["ninguna", "Ninguna, sí lo elegiría"],
+  ["otra", "Otra"]
+];
+export const DIFICULTADES_REG = DIFICULTADES.filter(d => d[0] !== "tecnologia");
+export const APOYOS = [
+  ["metodologia", "Clases de metodología"],
+  ["tutor", "Un tutor que acompañe"],
+  ["ejemplos", "Ejemplos de artículos de otros estudiantes"],
+  ["tiempo", "Más tiempo"],
+  ["talleres", "Talleres de redacción"],
+  ["otra", "Otra"]
+];
+
 const s = (id, text, options) => ({ id, type: "scale", text, options });
+const c = (id, text, options) => ({ id, type: "choice", text, options });
 const COMUNES = [
   s("se1", "¿Qué tan capaz se considera de formular un problema de investigación claramente delimitado?", CAPACIDAD),
   s("se2", "¿Qué tan capaz se considera de buscar y seleccionar artículos científicos pertinentes?", CAPACIDAD),
@@ -37,7 +75,7 @@ const COMUNES = [
   s("se5", "¿Qué tan capaz se considera de redactar un artículo académico con estructura científica?", CAPACIDAD)
 ];
 const horas = text => ({ id: "horas", type: "hours", text });
-const dificultad = text => ({ id: "dificultad", type: "choice", text, options: DIFICULTADES });
+const dificultad = text => c("dificultad", text, DIFICULTADES);
 
 export const QUESTIONS = {
   inicio: [
@@ -63,6 +101,18 @@ export const QUESTIONS = {
     horas("¿Cuántas horas semanales dedicó, en promedio, a elaborar su artículo?"),
     dificultad("¿Cuál fue su principal dificultad durante la elaboración del artículo?"),
     s("ia", "¿Con qué frecuencia utilizó herramientas de inteligencia artificial durante la elaboración del artículo?", FRECUENCIA)
+  ],
+  regulares: [
+    s("gusto", "¿Le hubiera gustado graduarse por la modalidad de artículo académico?", GUSTO),
+    c("eleccion", "Si hubiera podido elegir entre las tres modalidades, ¿cuál habría elegido?", ELECCIONES),
+    c("razon_si", "¿Cuál sería su razón principal para elegir el artículo académico?", RAZONES_SI),
+    c("razon_no", "¿Cuál sería su razón principal para no elegirlo?", RAZONES_NO),
+    s("preparacion", "¿Qué tan preparado se sentiría para elaborar un artículo académico de 6 a 15 páginas?", PREPARACION),
+    s("formacion", "¿Qué tanto le enseñó su carrera a investigar: buscar fuentes, analizar datos y redactar?", NADA_MUCHO),
+    c("dificultad", "¿Qué parte del artículo cree que le resultaría más difícil?", DIFICULTADES_REG),
+    c("apoyo", "¿Qué apoyo necesitaría más para elaborar un artículo académico?", APOYOS),
+    s("aporte_articulo", "¿Qué tanto cree que elaborar un artículo académico aportaría a su formación profesional?", NADA_MUCHO),
+    s("aporte_examen", "¿Qué tanto aportó el examen complexivo a su formación profesional?", NADA_MUCHO)
   ]
 };
 
@@ -84,23 +134,27 @@ export function cedulaValida(c) {
 
 // Convierte las respuestas del formulario en la fila que se guarda.
 // answers[id] = valor | "NR" (prefiero no responder) | "NS" (solo horas: no sabe).
+// Las opciones "otra" guardan su texto opcional en answers[id + "_otra"].
 export function toRow(stage, cedula, answers) {
-  const row = { etapa: stage, cedula, horas_ns: false, omitidas: [] };
-  for (const id of IDS) {
-    const v = answers[id];
+  const row = { etapa: stage, cedula, omitidas: [] };
+  for (const q of QUESTIONS[stage]) {
+    const id = q.id, v = answers[id];
     if (v === undefined || v === "") throw new Error("Falta responder una pregunta.");
+    if (q.type === "hours") row.horas_ns = false;
     if (v === "NR") { row.omitidas.push(id); row[id] = null; }
-    else if (id === "horas") {
+    else if (q.type === "hours") {
       if (v === "NS") { row.horas = null; row.horas_ns = true; }
       else {
         const n = Math.round(Number(String(v).replace(",", ".")) * 10) / 10;
         if (!Number.isFinite(n) || n < 0 || n > 100) throw new Error("Horas no válidas.");
         row.horas = n;
       }
-    } else if (id === "dificultad") row[id] = String(v);
+    } else if (q.type === "choice") row[id] = String(v);
     else row[id] = Number(v);
+    if (q.type === "choice" && q.options.some(o => o[0] === "otra")) {
+      const otra = String(answers[id + "_otra"] || "").trim().slice(0, 200);
+      row[id + "_otra"] = row[id] === "otra" && otra ? otra : null;
+    }
   }
-  const otra = String(answers.dificultad_otra || "").trim().slice(0, 200);
-  row.dificultad_otra = row.dificultad === "otra" && otra ? otra : null;
   return row;
 }

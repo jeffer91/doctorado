@@ -20,9 +20,26 @@ const txt = v => (v === null || v === undefined ? null : String(v));
 const q = (query, ...params) => ejecutar(query, params.map(txt));
 
 const ORIGENES = /^https:\/\/jeffer91\.github\.io$|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
-const ESCALAS = ["se1", "se2", "se3", "se4", "se5", "p6", "p7", "ia"];
-const IDS = [...ESCALAS, "horas", "dificultad"];
-const DIFICULTADES = ["tema", "bibliografia", "metodologia", "analisis", "redaccion", "tiempo", "tecnologia", "otra"];
+// Definición de cada encuesta: tabla, preguntas de escala 1–5 y preguntas de opción única.
+const ARTICULO = {
+  tabla: "doctorado_respuestas", horas: true,
+  escalas: ["se1", "se2", "se3", "se4", "se5", "p6", "p7", "ia"],
+  opciones: { dificultad: ["tema", "bibliografia", "metodologia", "analisis", "redaccion", "tiempo", "tecnologia", "otra"] }
+};
+const ENCUESTAS = {
+  inicio: ARTICULO, proceso: ARTICULO, final: ARTICULO,
+  regulares: {
+    tabla: "doctorado_regulares", horas: false,
+    escalas: ["gusto", "preparacion", "formacion", "aporte_articulo", "aporte_examen"],
+    opciones: {
+      eleccion: ["examen", "trabajo", "articulo"],
+      razon_si: ["corto", "investigar", "publicar", "carrera", "aprender", "no_elegiria", "otra"],
+      razon_no: ["preparacion", "redaccion", "tiempo", "tema", "examen", "ninguna", "otra"],
+      dificultad: ["tema", "bibliografia", "metodologia", "analisis", "redaccion", "tiempo", "otra"],
+      apoyo: ["metodologia", "tutor", "ejemplos", "tiempo", "talleres", "otra"]
+    }
+  }
+};
 const SESION_HORAS = 12;
 
 const hash = t => createHash("sha256").update(t).digest("hex");
@@ -49,41 +66,51 @@ async function body(req) {
 }
 
 // Valida y normaliza una respuesta. Devuelve null si no es válida.
+// El resultado es { etapa, cols }, donde cols lleva [columna, valor, tipo SQL].
 function limpiar(r) {
   if (!r || typeof r !== "object") return null;
-  if (!["inicio", "proceso", "final"].includes(r.etapa)) return null;
+  const e = ENCUESTAS[r.etapa];
+  if (!e) return null;
   if (typeof r.cedula !== "string" || !/^\d{10}$/.test(r.cedula)) return null;
-  const omitidas = Array.isArray(r.omitidas) ? [...new Set(r.omitidas)].filter(x => IDS.includes(x)) : [];
-  const f = { etapa: r.etapa, cedula: r.cedula, omitidas, horas_ns: r.horas_ns === true };
-  for (const k of ESCALAS) {
+  const ids = [...e.escalas, ...Object.keys(e.opciones), ...(e.horas ? ["horas"] : [])];
+  const omitidas = Array.isArray(r.omitidas) ? [...new Set(r.omitidas)].filter(x => ids.includes(x)) : [];
+  const cols = [["cedula", r.cedula, "text"], ["omitidas", "{" + omitidas.join(",") + "}", "text[]"]];
+  if (e === ARTICULO) cols.push(["etapa", r.etapa, "text"]);
+  for (const k of e.escalas) {
     const v = r[k] ?? null;
     if (v !== null && !(Number.isInteger(v) && v >= 1 && v <= 5)) return null;
     if ((v !== null) === omitidas.includes(k)) return null;
-    f[k] = v;
+    cols.push([k, v, "smallint"]);
   }
-  const h = r.horas ?? null;
-  if (h !== null && !(typeof h === "number" && h >= 0 && h <= 100)) return null;
-  if ((h !== null) + f.horas_ns + omitidas.includes("horas") !== 1) return null;
-  f.horas = h === null ? null : Math.round(h * 10) / 10;
-  const d = r.dificultad ?? null;
-  if (d !== null && !DIFICULTADES.includes(d)) return null;
-  if ((d !== null) === omitidas.includes("dificultad")) return null;
-  f.dificultad = d;
-  const otra = typeof r.dificultad_otra === "string" ? r.dificultad_otra.trim().slice(0, 200) : "";
-  f.dificultad_otra = d === "otra" && otra ? otra : null;
-  return f;
+  for (const [k, validas] of Object.entries(e.opciones)) {
+    const v = r[k] ?? null;
+    if (v !== null && !validas.includes(v)) return null;
+    if ((v !== null) === omitidas.includes(k)) return null;
+    cols.push([k, v, "text"]);
+    if (validas.includes("otra")) {
+      const otra = typeof r[k + "_otra"] === "string" ? r[k + "_otra"].trim().slice(0, 200) : "";
+      cols.push([k + "_otra", v === "otra" && otra ? otra : null, "text"]);
+    }
+  }
+  if (e.horas) {
+    const h = r.horas ?? null, ns = r.horas_ns === true;
+    if (h !== null && !(typeof h === "number" && h >= 0 && h <= 100)) return null;
+    if ((h !== null) + ns + omitidas.includes("horas") !== 1) return null;
+    cols.push(["horas", h === null ? null : Math.round(h * 10) / 10, "numeric(4,1)"], ["horas_ns", ns, "boolean"]);
+  }
+  return { tabla: e.tabla, cols };
 }
 
+// Inserta una fila validada. Devuelve false si esa cédula ya había respondido.
+// Los nombres de tabla, columna y tipo salen solo de las constantes de arriba.
 async function insertar(f, origen = "web", fecha = null) {
+  const cols = [...f.cols, ["origen", origen, "text"]];
   const filas = await q(
-    `insert into doctorado_respuestas
-       (etapa, cedula, se1, se2, se3, se4, se5, p6, p7, ia, horas, horas_ns, dificultad, dificultad_otra, omitidas, origen, created_at)
-     values ($1, $2, $3::smallint, $4::smallint, $5::smallint, $6::smallint, $7::smallint, $8::smallint, $9::smallint, $10::smallint,
-             $11::numeric(4,1), $12::boolean, $13, $14, $15::text[], $16, coalesce($17::timestamptz, now()))
-     on conflict (etapa, cedula) do nothing
+    `insert into ${f.tabla} (${cols.map(c => c[0]).join(", ")}, created_at)
+     values (${cols.map((c, i) => "$" + (i + 1) + "::" + c[2]).join(", ")}, coalesce($${cols.length + 1}::timestamptz, now()))
+     on conflict do nothing
      returning id::text`,
-    f.etapa, f.cedula, f.se1, f.se2, f.se3, f.se4, f.se5, f.p6, f.p7, f.ia,
-    f.horas, f.horas_ns, f.dificultad, f.dificultad_otra, "{" + f.omitidas.join(",") + "}", origen, fecha);
+    ...cols.map(c => c[1]), fecha);
   return filas.length === 1;
 }
 
@@ -132,12 +159,9 @@ async function manejar(req) {
     if (!s) return json(req, 401, { error: "sesion" });
 
     if (ruta === "GET /admin/respuestas") {
-      const [[texto]] = await q(
-        `select coalesce(json_agg(t order by t.created_at desc), '[]')::text from (
-           select id, cedula, codigo, etapa, created_at, version, se1, se2, se3, se4, se5, p6, p7,
-                  horas, horas_ns, dificultad, dificultad_otra, ia, omitidas, origen
-           from doctorado_respuestas) t`);
-      return json(req, 200, { filas: JSON.parse(texto) });
+      const leer = async tabla => JSON.parse((await q(
+        `select coalesce(json_agg(to_jsonb(t) - 'id' order by t.created_at desc), '[]')::text from ${tabla} t`))[0][0]);
+      return json(req, 200, { filas: await leer("doctorado_respuestas"), regulares: await leer("doctorado_regulares") });
     }
     if (ruta === "POST /admin/clave") {
       const nueva = String((await body(req)).nueva || "");

@@ -1,6 +1,7 @@
 # Encuestas de titulación · ITSQMET
 
-Tres encuestas de 10 preguntas (inicio, en proceso, finalización) y un panel privado.
+Cuatro encuestas de 10 preguntas y un panel privado: tres para el proceso por artículo académico
+(inicio, en proceso, finalización) y una para estudiantes que se gradúan por examen complexivo o trabajo de titulación.
 Sitio estático en GitHub Pages. Base principal: **Neon**. Respaldo: **Firebase** (y Supabase, opcional).
 
 ## Enlaces
@@ -8,6 +9,7 @@ Sitio estático en GitHub Pages. Base principal: **Neon**. Respaldo: **Firebase*
 - Inicio: https://jeffer91.github.io/doctorado/#/inicio
 - En proceso: https://jeffer91.github.io/doctorado/#/proceso
 - Finalización: https://jeffer91.github.io/doctorado/#/final
+- Examen o tesis (estudiantes sin la modalidad de artículo): https://jeffer91.github.io/doctorado/#/regulares
 - Administrador: https://jeffer91.github.io/doctorado/#/admin
 
 ## Cómo funciona
@@ -44,6 +46,10 @@ Aplicar `supabase/migrations/001_doctorado.sql` en un proyecto y poner su URL y 
 
 Columnas: `se1`–`se5` (autoeficacia, idénticas en las tres etapas), `p6`, `p7`, `horas`, `horas_ns` (no sabe),
 `dificultad`, `dificultad_otra`, `ia`, `omitidas` (preguntas con «prefiero no responder»), `etapa`, `version`, `created_at`, `origen`.
+
+Encuesta «examen o tesis» (tabla `doctorado_regulares`): `gusto`, `eleccion`, `razon_si`, `razon_no`, `preparacion`, `formacion`,
+`dificultad`, `apoyo`, `aporte_articulo`, `aporte_examen`, cada opción «otra» con su texto en `*_otra`. Una respuesta por cédula.
+El `codigo` es el mismo en todas las encuestas.
 
 El CSV seudonimizado no incluye la cédula; el CSV con cédula sirve para vincular notas y debe guardarse protegido.
 
