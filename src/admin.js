@@ -2,14 +2,13 @@
 import { API, ADMIN_EMAIL } from "./config.js";
 import { STAGES, ARTICULO, QUESTIONS, FRECUENCIA, DIFICULTADES } from "./questions.js";
 import { firebaseReady, fetchBackup, firebaseError } from "./firebase.js";
-import { conectarUtet, sesionUtet, leerClasificacionesUtet, errorUtet } from "./firebase-utet.js";
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const COLS = ["codigo", "carrera", "modalidad", "etapa", "created_at", "version", "se1", "se2", "se3", "se4", "se5", "p6", "p7", "horas", "horas_ns", "dificultad", "dificultad_otra", "ia", "omitidas", "origen"];
 const COLS_REG = ["codigo", "carrera", "modalidad", "etapa", "created_at", "version", "gusto", "eleccion", "razon_si", "razon_si_otra", "razon_no", "razon_no_otra", "preparacion", "formacion", "dificultad", "dificultad_otra", "apoyo", "apoyo_otra", "aporte_articulo", "aporte_examen", "omitidas", "origen"];
 const KEY = "doctorado:admin";
 let root = null, rows = [], regs = [], view = "resumen", careerFilter = "", sedeFilter = "", periodoFilter = "", fromDate = "", toDate = "", search = "", msg = "";
-let utetBusy = false, utetStatus = "", utetTimer = null;
+let periodosCatalog = [], candidatos = [], syncEstado = {};
 
 const token = () => { try { return sessionStorage.getItem(KEY); } catch { return null; } };
 const setToken = t => { try { t ? sessionStorage.setItem(KEY, t) : sessionStorage.removeItem(KEY); } catch { /* sin almacenamiento */ } };
@@ -38,12 +37,7 @@ export async function renderAdmin(el) {
     return frame('<h1>Panel</h1><p class="lead">No se pudieron cargar los datos. Recarga la página.</p>');
   }
   panel();
-  // Precarga Authentication para que la ventana de Google se abra desde el clic.
-  void sesionUtet().catch(() => {});
-  // Sincronización automática al abrir el panel, solo tras vincular Google una vez.
-  // No se muestra ninguna ventana emergente sin interacción del administrador.
-  if (sessionStorage.getItem("doctorado:utet-linked") === "1") void sincronizarUtet(false, true);
-  iniciarAutosincronizacion();
+
 }
 
 function login(error = "") {
@@ -66,7 +60,15 @@ function login(error = "") {
   });
 }
 
-async function loadRows() { const d = await api("/admin/respuestas"); rows = d.filas; regs = d.regulares || []; }
+async function loadRows() {
+  const [d,p] = await Promise.all([api("/admin/respuestas"), api("/admin/periodos")]);
+  rows = d.filas || []; regs = d.regulares || [];
+  periodosCatalog = p.periodos || []; candidatos = p.candidatos || [];
+  syncEstado = p.estado || {};
+  const saved = sessionStorage.getItem("doctorado:periodo") || "";
+  if (!periodoFilter && periodosCatalog.some(x => x.id === saved)) periodoFilter = saved;
+  if (periodoFilter && !periodosCatalog.some(x => x.id === periodoFilter)) periodoFilter = "";
+}
 
 const mean = a => a.length ? a.reduce((x, y) => x + Number(y), 0) / a.length : null;
 const fmt = n => n === null ? "—" : n.toFixed(1).replace(".", ",");
@@ -109,32 +111,33 @@ const NAV = [
   ["General", [["resumen", "Resumen general"]]],
   ["Artículo académico", [["articulo", "Todos los artículos"], ["inicio", "Inicio"], ["proceso", "En proceso"], ["final", "Finalización"]]],
   ["Otras modalidades", [["regulares", "Grupo de comparación"], ["complexivo", "Examen complexivo"], ["trabajo", "Trabajo de titulación"], ["sinmodalidad", "Sin clasificar"]]],
-  ["Análisis", [["carreras", "Por carrera"], ["respuestas", "Respuestas"]]],
+  ["Análisis", [["carreras", "Por carrera"], ["respuestas", "Respuestas"], ["pendientes", "Período pendiente"]]],
   ["Gestión", [["ajustes", "Configuración"]]]
 ];
 const TITLES = {
   resumen: "Resumen general", articulo: "Artículo académico", inicio: "Inicio del artículo",
   proceso: "Artículo en proceso", final: "Artículo finalizado", regulares: "Grupo de comparación",
   complexivo: "Examen complexivo", trabajo: "Trabajo de titulación", sinmodalidad: "Modalidad pendiente",
-  carreras: "Análisis por carrera", respuestas: "Registro de respuestas", ajustes: "Configuración"
+  carreras: "Análisis por carrera", respuestas: "Registro de respuestas", pendientes: "Respuestas sin período", ajustes: "Configuración"
 };
 const clasificar = r => r.etapa === "regulares" ? (r.modalidad || "") : "articulo";
 const carrera = r => r.carrera || "Sin carrera";
 const todas = () => [...rows, ...regs.map(r => ({ ...r, etapa: "regulares" }))].sort((a,b) => String(b.created_at).localeCompare(String(a.created_at)));
 const fecha = r => String(r.created_at || "").slice(0, 10);
 function filtradas() {
+  if (!periodoFilter) return [];
   const q = search.trim().toLowerCase();
   return todas().filter(r =>
+    r.periodoId === periodoFilter &&
     (!careerFilter || (careerFilter === "__vacia__" ? !r.carrera : r.carrera === careerFilter)) &&
     (!sedeFilter || (sedeFilter === "__vacia__" ? !r.sede : r.sede === sedeFilter)) &&
-    (!periodoFilter || r.periodoId === periodoFilter) &&
     (!fromDate || fecha(r) >= fromDate) && (!toDate || fecha(r) <= toDate) &&
     (!q || String(r.cedula || "").includes(q) || String(r.codigo || "").toLowerCase().includes(q) ||
       carrera(r).toLowerCase().includes(q))
   );
 }
 function porVista(arr) {
-  if (["resumen","carreras","respuestas","ajustes"].includes(view)) return arr;
+  if (["resumen","carreras","respuestas","pendientes","ajustes"].includes(view)) return arr;
   if (view === "articulo") return arr.filter(r => r.etapa !== "regulares");
   if (["inicio","proceso","final"].includes(view)) return arr.filter(r => r.etapa === view);
   if (view === "regulares") return arr.filter(r => r.etapa === "regulares");
@@ -194,101 +197,75 @@ function tablaRespuestas(data) {
     (data.length > 200 ? '<p class="note">Se muestran los primeros 200 registros. La exportación incluye todos los resultados filtrados.</p>' : '') +
     (!data.length ? '<p class="note">No hay respuestas con estos filtros.</p>' : ''));
 }
-function utetSection() {
-  const clasificados = new Set(todas().filter(r => r.carrera).map(r => r.cedula)).size;
-  const pendientes = new Set(todas().filter(r => !r.carrera).map(r => r.cedula)).size;
-  return section("Cruce de carreras con Firebase UTET",
-    '<p class="note">Origen: proyecto UTET, colecciones Estudiante, matriculas y sus equivalentes anteriores. Las cédulas se cruzan exclusivamente con los participantes de las encuestas.</p>' +
-    '<div class="dash-stats">' + stat(clasificados,"Con carrera registrada") + stat(pendientes,"Sin carrera") + '</div>' +
-    '<button class="btn ghost" data-a="sync-utet"' + (utetBusy ? ' disabled' : '') + '>' +
-    (utetBusy ? 'Sincronizando UTET…' : 'Sincronizar ahora con Firebase UTET') + '</button>' +
-    '<p class="note" data-utet-msg role="status">' + esc(utetStatus || "La primera sincronización solicita autorización con Google. Tras vincularla, se actualiza al ingresar de nuevo al panel.") + '</p>' +
-    '<p class="note">La sincronización guarda la clasificación en Neon y no cambia las respuestas ni escribe en Firebase. Se necesita acceso de lectura autenticado en Firebase UTET.</p>');
+function estadoSincronizacion() {
+  const ok = syncEstado.estado === "correcto";
+  const last = syncEstado.ejecutado_en ? shortDate(syncEstado.ejecutado_en) : "Sin ejecuciones registradas";
+  return section("Sincronización automática Firebase UTET → Neon",
+    '<p class="note">Estado: <strong>' + esc(ok ? "Sincronizado" : (syncEstado.estado || "Pendiente de configurar")) + '</strong>' +
+    ' · Última ejecución: ' + esc(last) + '</p>' +
+    '<p class="note">Períodos en Neon: <strong>' + periodosCatalog.length + '</strong> · Matrículas de participantes: <strong>' +
+    candidatos.length + '</strong>.</p>' +
+    '<p class="note">El servicio está programado en GitHub Actions cada 30 minutos, sin necesidad de abrir este panel. Su ejecución efectiva requiere las credenciales privadas autorizadas de UTET y Neon.</p>' +
+    '<p class="note">Las respuestas sin período inequívoco permanecen pendientes para evitar asignaciones incorrectas.</p>');
 }
-function iniciarAutosincronizacion() {
-  if (utetTimer) return;
-  utetTimer = setInterval(() => {
-    if (location.hash.startsWith("#/admin") && token() &&
-        sessionStorage.getItem("doctorado:utet-linked") === "1") {
-      void sincronizarUtet(false, true);
-    }
-  }, 15 * 60 * 1000);
+function pendientesSection() {
+  const unresolved = todas().filter(r => !r.periodoId);
+  const shown = unresolved.slice(0,150);
+  const rowsHtml = shown.map(r => {
+    const matching = candidatos.filter(c => c.cedula === r.cedula);
+    const field = matching.length ?
+      '<select aria-label="Período del estudiante">' +
+      '<option value="">Seleccione el período</option>' +
+      matching.map(c => '<option value="' + esc(c.periodoId) + '">' + esc(
+        (periodosCatalog.find(p => p.id === c.periodoId)?.nombre || c.periodoId) +
+        (c.carrera ? " · " + c.carrera : "")) + '</option>').join("") + '</select>' +
+      '<button class="link" data-assign="' + esc(r.cedula + "|" + r.etapa) + '">Asignar</button>'
+      : '<span class="note">Sin matrícula identificada en UTET</span>';
+    return '<tr><td>' + esc(r.codigo) + '</td><td>' + esc(STAGES[r.etapa]?.label || r.etapa) +
+      '</td><td>' + esc(shortDate(r.created_at)) + '</td><td>' + field + '</td></tr>';
+  }).join("");
+  return '<div class="dash-stats">' + stat(unresolved.length,"Respuestas pendientes") +
+    stat(new Set(unresolved.map(r=>r.cedula)).size,"Estudiantes por revisar") + '</div>' +
+    section("Vinculación manual únicamente cuando sea necesaria",
+      '<p class="note">Selecciona el período institucional correcto según la matrícula. Solo se muestran períodos documentados en Neon; la operación se guarda con trazabilidad en la base oficial.</p>' +
+      '<div class="dash-table-scroll"><table class="dash-table"><thead><tr><th>Código</th><th>Encuesta</th><th>Fecha</th><th>Período verificado</th></tr></thead><tbody>' +
+      rowsHtml + '</tbody></table></div>' +
+      (unresolved.length > 150 ? '<p class="note">Se muestran los primeros 150 pendientes.</p>' : '') +
+      (!unresolved.length ? '<p class="note">No hay encuestas pendientes de asignación.</p>' : ''));
 }
-async function sincronizarUtet(interactive, automatic = false) {
-  if (utetBusy || !token()) return;
-  const LAST = "doctorado:utet-last";
-  const last = Number(sessionStorage.getItem(LAST) || 0);
-  if (automatic && Date.now() - last < 15*60*1000) return;
-  utetBusy = true;
-  utetStatus = "Consultando UTET y cruzando por cédula...";
-  root.querySelectorAll("[data-utet-msg]").forEach(el => el.textContent = utetStatus);
-  root.querySelectorAll("[data-a='sync-utet']").forEach(el => { el.disabled = true; el.textContent = "Sincronizando UTET…"; });
-  try {
-    if (interactive) await conectarUtet();
-    else if (!await sesionUtet()) return;
-    // Incluye respuestas recibidas mientras el administrador tiene abierto el panel.
-    await loadRows();
-    const cedulas = [...new Set(todas().map(r => r.cedula).filter(Boolean))];
-    const result = await leerClasificacionesUtet(cedulas);
-    if (result.avisos.length && result.encontradas === 0) {
-      throw new Error("Acceso parcial a Firebase. " + result.avisos.slice(0,2).join(" "));
-    }
-    const existing = new Map(todas().map(r => [r.cedula,r]));
-    const nuevas = result.filas.filter(r => {
-      const prev = existing.get(r.cedula);
-      return !prev || (r.carrera && r.carrera !== prev.carrera) ||
-        (r.modalidad && r.modalidad !== prev.modalidad) ||
-        (r.sede && r.sede !== prev.sede) ||
-        (prev.periodoId !== undefined && r.periodoId && r.periodoId !== prev.periodoId);
-    });
-    let guardadas = 0;
-    for (let i=0;i<nuevas.length;i+=200) {
-      const res = await api("/admin/clasificar", { filas: nuevas.slice(i,i+200) });
-      guardadas += res.guardadas;
-    }
-    await loadRows();
-    sessionStorage.setItem("doctorado:utet-linked","1");
-    iniciarAutosincronizacion();
-    // Si hay fallos parciales se permite volver a intentar en la siguiente visita.
-    if (!result.avisos.length) sessionStorage.setItem(LAST,String(Date.now()));
-    utetStatus = "UTET: " + result.encontradas + " de " + result.consultadas +
-      " estudiantes localizados; " + guardadas + " clasificaciones guardadas en Neon; " +
-      result.sinCoincidencia + " sin coincidencia." +
-      (result.avisos.length ? " Avisos: " + result.avisos.slice(0,2).join(" | ") : "");
-  } catch (e) {
-    utetStatus = "No se completó el cruce: " + errorUtet(e);
-  } finally {
-    utetBusy = false;
-    if (root?.querySelector(".dashboard")) panel();
-  }
-}
-
 function configPanel() {
   const base = location.origin + location.pathname;
-  return utetSection() + '<div class="dash-two">' +
-    '<div>' + section("Clasificar estudiantes por carrera y modalidad",
-      '<p class="note">Pega un listado institucional, una fila por estudiante, con el formato <strong>cédula;carrera;modalidad</strong>. Modalidad: articulo, complexivo o trabajo. Puedes dejar la modalidad vacía. Importar no modifica las respuestas originales.</p>' +
-      '<label class="field" for="clasificacion">Cédula; carrera; modalidad</label>' +
-      '<textarea id="clasificacion" class="dash-textarea" rows="7" placeholder="1710000000;Enfermería;complexivo&#10;1720000000;Software;articulo"></textarea>' +
-      '<button class="btn" data-a="import">Guardar clasificación</button><p class="note">Solo utiliza cédulas y carreras de registros institucionales verificados.</p>') +
-    section("Exportaciones", '<div class="actions"><button class="btn ghost" data-a="csv">CSV seudonimizado</button><button class="btn ghost" data-a="csvid">CSV con cédula</button></div>') + '</div>' +
-    '<div>' + section("Respaldo Firebase",
-      '<button class="btn ghost" data-a="backup"' + (firebaseReady() ? "" : " disabled") + '>' +
-      (firebaseReady() ? "Revisar y recuperar respaldo" : "Firebase sin configurar") + '</button><p class="note" id="msg">' + esc(msg) + '</p>') +
-    section("Enlaces públicos", '<ul class="links">' + Object.entries(STAGES).map(([k,s]) =>
-      '<li><span>' + esc(s.label) + '</span><button class="link" data-copy="' + esc(base + "#/" + k) + '">Copiar</button></li>').join("") + '</ul>') +
-    section("Cuenta", '<button class="btn ghost" data-a="pass">Cambiar contraseña</button><button class="btn ghost" data-a="reload">Actualizar datos</button>') +
-    '</div></div>';
+  return estadoSincronizacion() + '<div class="dash-two"><div>' +
+    section("Exportaciones",
+      '<p class="note">Las exportaciones respetan el período y los filtros seleccionados.</p>' +
+      '<div class="actions"><button class="btn ghost" data-a="csv">CSV seudonimizado</button>' +
+      '<button class="btn ghost" data-a="csvid">CSV con cédula</button></div>') +
+    section("Cuenta", '<button class="btn ghost" data-a="pass">Cambiar contraseña</button>') +
+    '</div><div>' +
+    section("Enlaces de encuestas", '<ul class="links">' +
+      Object.entries(STAGES).map(([k,s]) =>
+       '<li><span>' + esc(s.label) + '</span><button class="link" data-copy="' + esc(base + "#/" + k +
+       (periodoFilter ? "?periodo=" + encodeURIComponent(periodoFilter) : "")) + '">Copiar</button></li>').join("") + '</ul>' +
+       '<p class="note">Selecciona primero un período para generar enlaces que lo identifiquen explícitamente.</p>') +
+    section("Respaldo de encuestas Firebase", '<button class="btn ghost" data-a="backup"' +
+       (firebaseReady() ? "" : " disabled") + '>' +
+       (firebaseReady() ? "Revisar respaldo" : "Respaldo aún sin configurar") +
+       '</button><p class="note" id="msg">' + esc(msg) + '</p>') + '</div></div>';
 }
 function panel() {
   const filtered = filtradas(), data = porVista(filtered);
-  const careers = [...new Set(todas().map(r => r.carrera).filter(Boolean))].sort((a,b) => a.localeCompare(b,"es"));
-  const sedes = [...new Set(todas().map(r => r.sede).filter(Boolean))].sort((a,b) => a.localeCompare(b,"es"));
-  const periodos = [...new Set(todas().map(r => r.periodoId).filter(Boolean))].sort((a,b) => b.localeCompare(a,"es"));
+  const active = candidatos.filter(c => c.periodoId === periodoFilter);
+  const careers = [...new Set([...active.map(r=>r.carrera),...filtered.map(r=>r.carrera)].filter(Boolean))].sort((a,b) => a.localeCompare(b,"es"));
+  const sedes = [...new Set(filtered.map(r => r.sede).filter(Boolean))].sort((a,b) => a.localeCompare(b,"es"));
+
   const nav = NAV.map(([title,items]) => '<div class="dash-nav-group"><p>' + esc(title) + '</p>' +
     items.map(([key,name]) => '<button class="dash-nav-item' + (view === key ? ' active' : '') + '" data-v="' + key + '"' +
     (view === key ? ' aria-current="page"' : '') + '>' + esc(name) + '</button>').join("") + '</div>').join("");
   const toolbar = '<div class="dash-filters">' +
+    '<label class="dash-filter-period"><strong>1. Período académico</strong><select data-filter="periodo" required>' +
+    '<option value="">Seleccione un período</option>' +
+    periodosCatalog.map(p=>'<option value="' + esc(p.id) + '"' + (periodoFilter === p.id ? ' selected' : '') + '>' + esc(p.nombre) + '</option>').join("") +
+    '</select></label>' +
     '<label>Carrera<select data-filter="career"><option value="">Todas las carreras</option><option value="__vacia__"' +
     (careerFilter === "__vacia__" ? ' selected' : '') + '>Sin carrera</option>' +
     careers.map(c => '<option value="' + esc(c) + '"' + (careerFilter === c ? ' selected' : '') + '>' + esc(c) + '</option>').join("") +
@@ -297,22 +274,23 @@ function panel() {
     (sedeFilter === "__vacia__" ? " selected" : "") + '>Sin sede</option>' +
     sedes.map(c => '<option value="' + esc(c) + '"' + (sedeFilter === c ? " selected" : "") + '>' + esc(c) + '</option>').join("") +
     '</select></label>' +
-    '<label>Período UTET<select data-filter="periodo"><option value="">Todos</option>' +
-    periodos.map(c => '<option value="' + esc(c) + '"' + (periodoFilter === c ? " selected" : "") + '>' + esc(c) + '</option>').join("") +
-    '</select></label>' +
     '<label>Desde<input type="date" data-filter="from" value="' + esc(fromDate) + '"></label>' +
     '<label>Hasta<input type="date" data-filter="to" value="' + esc(toDate) + '"></label>' +
     '<label>Buscar cédula o código<input type="search" data-filter="search" placeholder="Buscar..." value="' + esc(search) + '"></label>' +
     '<button class="btn ghost" data-a="reset">Limpiar filtros</button></div>';
   let body = "";
-  if (view === "resumen") body = metricas(data) + '<div class="dash-two"><div>' + etapaCount(data) + '</div><div>' + modalidadCount(data) + '</div></div>' +
-    utetSection() +
+  if (view === "ajustes") body = configPanel();
+  else if (view === "pendientes") body = pendientesSection();
+  else if (!periodoFilter) body = estadoSincronizacion() +
+    '<p class="lead">Selecciona primero el período académico para consultar estadísticas y filtros.</p>';
+  else if (view === "resumen") body = metricas(data) + '<div class="dash-two"><div>' + etapaCount(data) + '</div><div>' + modalidadCount(data) + '</div></div>' +
+    estadoSincronizacion() +
     section("Carreras registradas", '<p class="note">' + [...new Set(data.map(carrera).filter(k => k !== "Sin carrera"))].length +
       ' carreras identificadas · ' + data.filter(r => !r.carrera).length + ' respuestas pendientes de clasificar.</p>') +
       '<button class="btn ghost" data-v="carreras">Ver distribución por carrera</button>';
   else if (view === "carreras") body = metricas(data) + tablaCarreras(data);
   else if (view === "respuestas") body = metricas(data) + tablaRespuestas(data);
-  else if (view === "ajustes") body = configPanel();
+
   else {
     body = metricas(data);
     if (view === "articulo") body += etapaCount(data);
@@ -336,7 +314,11 @@ function onChange(ev) {
   if (!f) return;
   if (f === "career") careerFilter = ev.target.value;
   else if (f === "sede") sedeFilter = ev.target.value;
-  else if (f === "periodo") periodoFilter = ev.target.value;
+  else if (f === "periodo") {
+    periodoFilter = ev.target.value;
+    sessionStorage.setItem("doctorado:periodo",periodoFilter);
+    careerFilter = ""; sedeFilter = ""; fromDate = ""; toDate = ""; search = "";
+  }
   else if (f === "from") fromDate = ev.target.value;
   else if (f === "to") toDate = ev.target.value;
   else if (f === "search") search = ev.target.value.trim();
@@ -350,6 +332,22 @@ async function onClick(ev) {
   const b = ev.target.closest("button");
   if (!b) return;
   if (b.dataset.v) { view = b.dataset.v; return panel(); }
+  if (b.dataset.assign) {
+    const [cedula, etapa] = b.dataset.assign.split("|");
+    const periodoId = b.closest("tr")?.querySelector("select")?.value;
+    if (!periodoId) return alert("Selecciona el período confirmado en UTET.");
+    if (!confirm("¿Asociar esta encuesta con el período seleccionado?")) return;
+    b.disabled = true;
+    try {
+      await api("/admin/asignar-periodo",{cedula,etapa,periodoId});
+      await loadRows(); panel();
+    } catch (error) {
+      b.disabled = false;
+      alert(error.status === 409 ? "Esa matrícula no coincide con los datos de UTET." : "No se pudo guardar la asignación.");
+    }
+    return;
+  }
+
   if (b.dataset.pickcareer) { careerFilter = b.dataset.pickcareer; view = "respuestas"; return panel(); }
   if (b.dataset.copy) {
     try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copiado"; }
@@ -358,11 +356,10 @@ async function onClick(ev) {
   }
   switch (b.dataset.a) {
     case "out": try { await api("/admin/salir", {}); } catch {} setToken(null); rows = []; regs = [];
-      if (utetTimer) clearInterval(utetTimer); utetTimer = null;
       return login();
     case "reload": return renderAdmin(root);
     case "reset": careerFilter = ""; sedeFilter = ""; periodoFilter = ""; fromDate = ""; toDate = ""; search = ""; return panel();
-    case "sync-utet": return sincronizarUtet(true);
+
     case "csv": return csv(false);
     case "csvid": return confirm("Este archivo incluye cédulas. Guárdalo en un lugar seguro.") && csv(true);
     case "import": return importar(b);
