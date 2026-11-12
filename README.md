@@ -61,3 +61,42 @@ El CSV seudonimizado no incluye la cédula; el CSV con cédula sirve para vincul
 ## Desarrollo
 
 `npm test` y `npm run check` (sitio); `npm test` en `neon/function` (función, con Postgres embebido). Para ver el sitio en local: `python3 -m http.server` en la raíz.
+
+
+## Panel de administración organizado
+
+El panel en `#/admin` incorpora un menú lateral con:
+
+- Resumen general: estudiantes únicos, respuestas, etapas y modalidades.
+- Artículo académico: total, inicio, proceso y finalización.
+- Otras modalidades: grupo de comparación, examen complexivo, trabajo de titulación y pendientes de clasificar.
+- Análisis: tabla por carrera y registro de respuestas.
+- Gestión: clasificación administrativa, exportación CSV, respaldo y enlaces.
+
+Los filtros de carrera, rango de fechas y búsqueda por cédula/código se aplican
+a los módulos y a las exportaciones. La modalidad real es independiente de
+la **modalidad preferida** que el estudiante responde en el cuestionario.
+
+### Clasificación de carreras y modalidad real
+
+Las encuestas históricas no contienen carrera ni modalidad real. La información
+se mantiene separada de las respuestas en la tabla `doctorado_clasificacion`
+(creada por `neon/001_doctorado.sql`) y se asocia únicamente mediante cédula.
+
+Desde Administración → Configuración → «Clasificar estudiantes» pega los datos
+institucionales verificados en el formato:
+
+```text
+cedula;carrera;modalidad
+[cedula del estudiante];Enfermería;complexivo
+[cedula del estudiante];Software;articulo
+```
+
+Modalidades aceptadas: `articulo`, `complexivo`, `trabajo` (o vacía). Una fila
+por estudiante, máximo 500 por lote. La acción está protegida por autenticación
+administrativa, puede actualizar la clasificación sin cambiar las respuestas,
+y no deduce la modalidad real de la pregunta sobre preferencias.
+
+Si todavía no se ha cargado la clasificación, los registros se muestran
+como «Sin carrera» o «Sin clasificar». No deben interpretarse esos estados
+como ausencia de estudiantes en una carrera.
