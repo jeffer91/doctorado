@@ -162,7 +162,11 @@ async function manejar(req) {
       const leer = async tabla => JSON.parse((await q(
         `select coalesce(json_agg((to_jsonb(t) - 'id') ||
            jsonb_build_object('carrera', coalesce(cl.carrera, ''),
-                              'modalidad', coalesce(cl.modalidad, ''))
+                              'modalidad', coalesce(cl.modalidad, ''),
+                              'sede', coalesce(cl.sede, ''),
+                              'periodoId', coalesce(cl.periodo_id, ''),
+                              'fuenteClasificacion', coalesce(cl.fuente, ''),
+                              'fechaClasificacion', cl.sincronizado_en)
            order by t.created_at desc), '[]')::text
          from ${tabla} t left join doctorado_clasificacion cl on cl.cedula = t.cedula`))[0][0]);
       return json(req, 200, { filas: await leer("doctorado_respuestas"), regulares: await leer("doctorado_regulares") });
@@ -173,19 +177,35 @@ async function manejar(req) {
       const datos = filas.map(x => ({
         cedula: typeof x?.cedula === "string" ? x.cedula.trim() : "",
         carrera: typeof x?.carrera === "string" ? x.carrera.trim() : "",
-        modalidad: typeof x?.modalidad === "string" ? x.modalidad.trim().toLowerCase() : ""
+        modalidad: typeof x?.modalidad === "string" ? x.modalidad.trim().toLowerCase() : "",
+        sede: typeof x?.sede === "string" ? x.sede.trim() : "",
+        periodoId: typeof x?.periodoId === "string" ? x.periodoId.trim() : "",
+        fuente: x?.fuente === "firebase_utet" ? "firebase_utet" : "manual"
       }));
       if (datos.some(x => !/^[0-9]{10}$/.test(x.cedula) || x.carrera.length > 120 ||
-          !["", "articulo", "complexivo", "trabajo"].includes(x.modalidad) || (!x.carrera && !x.modalidad)))
+          x.sede.length > 120 || x.periodoId.length > 120 ||
+          !["", "articulo", "complexivo", "trabajo"].includes(x.modalidad) ||
+          (!x.carrera && !x.modalidad)))
         return json(req, 400, { error: "clasificacion_invalida" });
+      let guardadas = 0;
       for (const x of datos) {
-        await q(`insert into doctorado_clasificacion (cedula, carrera, modalidad)
-          values ($1, $2, $3)
+        const updated = await q(`insert into doctorado_clasificacion
+          (cedula, carrera, modalidad, sede, periodo_id, fuente, sincronizado_en)
+          values ($1, $2, $3, $4, $5, $6, case when $6 = 'firebase_utet' then now() else null end)
           on conflict (cedula) do update set
-          carrera = excluded.carrera, modalidad = excluded.modalidad, actualizado = now()`,
-          x.cedula, x.carrera, x.modalidad);
+          carrera = case when excluded.carrera <> '' then excluded.carrera else doctorado_clasificacion.carrera end,
+          modalidad = case when excluded.modalidad <> '' then excluded.modalidad else doctorado_clasificacion.modalidad end,
+          sede = case when excluded.sede <> '' then excluded.sede else doctorado_clasificacion.sede end,
+          periodo_id = case when excluded.periodo_id <> '' then excluded.periodo_id else doctorado_clasificacion.periodo_id end,
+          fuente = excluded.fuente,
+          sincronizado_en = case when excluded.fuente = 'firebase_utet' then now()
+            else doctorado_clasificacion.sincronizado_en end,
+          actualizado = now()
+          returning cedula`,
+          x.cedula, x.carrera, x.modalidad, x.sede, x.periodoId, x.fuente);
+        guardadas += updated.length;
       }
-      return json(req, 200, { guardadas: datos.length });
+      return json(req, 200, { guardadas });
     }
     if (ruta === "POST /admin/clave") {
       const nueva = String((await body(req)).nueva || "");
