@@ -100,3 +100,44 @@ y no deduce la modalidad real de la pregunta sobre preferencias.
 Si todavía no se ha cargado la clasificación, los registros se muestran
 como «Sin carrera» o «Sin clasificar». No deben interpretarse esos estados
 como ausencia de estudiantes en una carrera.
+
+
+## Vinculación con Firebase UTET (carreras y modalidades)
+
+El panel administrativo consulta de forma autenticada el proyecto `utet-4387a` 
+de Requisitos. La configuración web pública está en `src/config.js`, en la constante
+`UTET_FIREBASE`. **Esta conexión es distinta del respaldo de encuestas Firebase**.
+
+La integración lee únicamente documentos que corresponden a cédulas que respondieron:
+- `Estudiante` y `Estudiantes` (legado): carrera/sede actual.
+- `matriculas` y `EstudiantesPeriodo` (legado): carrera, sede, período y modalidad real.
+
+El mapeo está en `src/utet-map.js`; la lectura Firebase en `src/firebase-utet.js`.
+No se importan nombres, correos, teléfonos ni calificaciones al panel doctoral.
+
+### Primer uso
+1. Firebase Console, proyecto UTET > Authentication: habilitar proveedor Google
+   y autorizar `jeffer91.github.io` como dominio permitido.
+2. Revisar las reglas de Firestore para que **solo el administrador autorizado**
+   pueda leer las colecciones utilizadas por Doctorado, sin afectar la app Requisitos.
+3. Abrir `#/admin`, ingresar a Neon, pulsar **Sincronizar ahora con Firebase UTET**
+   e iniciar sesión con Google usando el correo administrador.
+4. La aplicación cruza cédulas, guarda carreras y modalidades en
+   `doctorado_clasificacion` de Neon y permite ver las coincidencias.
+5. Después de la vinculación, vuelve a verificar datos al abrir el panel
+   y aproximadamente cada 15 minutos **mientras el panel esté abierto**.
+
+No existe una sincronización de servidor cuando el navegador está cerrado.
+Para eso sería necesario configurar un servicio backend con credenciales
+de acceso de mínimo privilegio a Firebase, nunca incrustadas en GitHub Pages.
+
+### Advertencia sobre reglas de Firestore
+Las reglas globales `allow read, write: if true` dejan datos institucionales
+expuestos a cualquier persona. **No utilizar estas reglas como autorización**;
+es necesario eliminarlas y definir permisos por colección y rol, comprobando
+primero todos los usos de Requisitos para no interrumpirla.
+Si una regla pública más general continúa vigente, una regla más restrictiva
+en otra ruta NO anula ese permiso.
+
+La sincronización administrativa jamás escribe en Firebase UTET, solo lee
+datos académicos y guarda la clasificación en Neon.
