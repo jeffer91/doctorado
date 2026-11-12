@@ -1,69 +1,66 @@
-// src/firebase.js — Acceso aislado a datos de las encuestas.
-// La configuración pública de Firebase se inyecta en runtime-config.js durante el despliegue.
-// Nunca se consulta desde el navegador el padrón privado de estudiantes del ITSQMET.
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
-import { getFirestore, collection, doc, getDocs, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-firestore.js";
-import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-auth.js";
+// src/firebase.js — Base secundaria (respaldo). Se carga solo cuando se necesita.
+import { FIREBASE } from "./config.js";
 
-const firebaseConfig = window.DOCTORADO_FIREBASE_CONFIG;
-const configured = Boolean(firebaseConfig?.apiKey && firebaseConfig?.projectId && firebaseConfig?.authDomain && firebaseConfig?.appId);
-const app = configured ? initializeApp(firebaseConfig, "DoctoradoEncuestas") : null;
-const auth = configured ? getAuth(app) : null;
-const db = configured ? getFirestore(app) : null;
+const V = "https://www.gstatic.com/firebasejs/12.6.0/";
 const COL = "doctorado_respuestas";
+const CAMPOS = ["se1", "se2", "se3", "se4", "se5", "p6", "p7", "horas", "horas_ns", "dificultad", "dificultad_otra", "ia", "omitidas"];
+let cache = null;
 
-export function ready() { return configured; }
-export function currentUser() { return auth?.currentUser || null; }
-export function onLoginChange(callback) { return auth ? onAuthStateChanged(auth, callback) : (()=>{}); }
-export async function signOutUser() { if (auth) await signOut(auth); }
-export async function signInAdmin() {
-  assertReady();
-  const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({prompt: "select_account"});
-  const result = await signInWithPopup(auth, provider);
-  return result.user;
+export function firebaseReady() {
+  return Boolean(FIREBASE?.apiKey && FIREBASE?.projectId && FIREBASE?.authDomain && FIREBASE?.appId);
 }
-export function isGoogleUser(user) {
-  return Boolean(user?.emailVerified && user?.providerData?.some(x => x.providerId === "google.com"));
+async function sdk() {
+  if (!firebaseReady()) throw new Error("Firebase no está configurado.");
+  if (!cache) cache = (async () => {
+    const [a, f, u] = await Promise.all([import(V + "firebase-app.js"), import(V + "firebase-firestore.js"), import(V + "firebase-auth.js")]);
+    const app = a.initializeApp(FIREBASE, "DoctoradoEncuestas");
+    return { f, u, db: f.getFirestore(app), auth: u.getAuth(app) };
+  })();
+  return cache;
 }
-function assertReady() {
-  if (!configured) throw new Error("Falta configurar Firebase en GitHub Actions. Consulta el README de instalación.");
-}
-async function anonymousSession() {
-  assertReady();
-  if (auth.currentUser?.isAnonymous) return auth.currentUser;
-  if (auth.currentUser) await signOut(auth);
-  const result = await signInAnonymously(auth);
-  return result.user;
-}
-async function responseId(stage, cedula) {
-  const bytes = new TextEncoder().encode("doctorado-v1|" + stage + "|" + cedula);
+async function docId(stage, cedula) {
+  const bytes = new TextEncoder().encode("doctorado-v2|" + stage + "|" + cedula);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map(v => v.toString(16).padStart(2, "0")).join("");
 }
-export async function submitSurvey({stage,cedula,carrera,answers,consent}) {
-  if (!consent) throw new Error("Debes aceptar el consentimiento para participar.");
-  if (!/^\d{10}$/.test(cedula)) throw new Error("La cédula debe tener diez dígitos.");
-  const user = await anonymousSession();
-  const id = await responseId(stage, cedula);
-  await setDoc(doc(db,COL,id), {
-    etapa:stage, cedula, carrera, answers, consent:true,
-    schemaVersion:1, anonUid:user.uid, createdAt:serverTimestamp()
+
+// Guarda una copia de la respuesta. Devuelve true si quedó guardada.
+export async function backupSurvey(row) {
+  const { f, u, db, auth } = await sdk();
+  if (auth.currentUser && !auth.currentUser.isAnonymous) await u.signOut(auth);
+  const user = auth.currentUser || (await u.signInAnonymously(auth)).user;
+  const r = {};
+  for (const k of CAMPOS) r[k] = row[k] ?? null;
+  await f.setDoc(f.doc(db, COL, await docId(row.etapa, row.cedula)), {
+    etapa: row.etapa, cedula: row.cedula, r, consent: true,
+    schemaVersion: 2, anonUid: user.uid, createdAt: f.serverTimestamp()
   });
-  return id;
+  return true;
 }
-export async function fetchSurveys() {
-  assertReady();
-  const snapshot = await getDocs(collection(db,COL));
-  return snapshot.docs.map(d=>({id:d.id,...d.data(),fecha:d.data().createdAt?.toDate?.()??null}));
+
+// Administrador: lee el respaldo completo (requiere Google autorizado en las reglas).
+export async function fetchBackup() {
+  const { f, u, db, auth } = await sdk();
+  const esGoogle = auth.currentUser?.providerData?.some(x => x.providerId === "google.com");
+  if (!esGoogle) {
+    if (auth.currentUser) await u.signOut(auth);
+    const provider = new u.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: "select_account" });
+    await u.signInWithPopup(auth, provider);
+  }
+  const snap = await f.getDocs(f.query(f.collection(db, COL), f.where("schemaVersion", "==", 2)));
+  return snap.docs.map(d => {
+    const x = d.data();
+    return { etapa: x.etapa, cedula: x.cedula, version: 1, ...x.r, created_at: x.createdAt?.toDate?.().toISOString() };
+  });
 }
-export function readableError(error) {
+
+export function firebaseError(error) {
   const code = error?.code || "";
-  if (code === "permission-denied") return "Acceso rechazado. Verifica las reglas de seguridad. Si ya enviaste esta encuesta, no podrás sobrescribirla.";
-  if (code === "auth/operation-not-allowed") return "Habilita los proveedores de autenticación Anónimo y Google en Firebase.";
-  if (code === "auth/unauthorized-domain") return "Debes autorizar el dominio de GitHub Pages en Firebase Authentication.";
-  if (code === "auth/popup-blocked") return "Permite las ventanas emergentes para iniciar sesión con Google.";
-  if (code === "auth/popup-closed-by-user") return "Se cerró la ventana de Google antes de completar el acceso.";
-  if (code === "unavailable" || code === "auth/network-request-failed") return "No fue posible conectar con Firebase.";
-  return error?.message || "No se pudo completar la operación.";
+  if (code === "permission-denied") return "Firebase rechazó el acceso. Revisa las reglas y la cuenta de Google.";
+  if (code === "auth/operation-not-allowed") return "Habilita los accesos Anónimo y Google en Firebase.";
+  if (code === "auth/unauthorized-domain") return "Autoriza jeffer91.github.io en Firebase Authentication.";
+  if (code === "auth/popup-blocked") return "Permite las ventanas emergentes para entrar con Google.";
+  if (code === "auth/popup-closed-by-user") return "Se cerró la ventana de Google.";
+  return error?.message || "No se pudo conectar con Firebase.";
 }

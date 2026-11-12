@@ -1,10 +1,7 @@
-// REGLAS PARA INTEGRAR EN LAS REGLAS EXISTENTES DE UTET.
-// IMPORTANTE: Copiar SOLO este match dentro de:
+// REGLAS DEL RESPALDO (Firebase es la base secundaria; la principal es Supabase).
+// Copiar SOLO este match dentro de:
 // service cloud.firestore { match /databases/{database}/documents { ... } }
-// NO reemplazar el conjunto de reglas existentes de UTET.
-//
-// Administrador provisional: correo de asistencia compartido para este proyecto.
-// El requisito Google + email verificado se ejecuta en el servidor Firestore.
+// NO reemplazar las demás reglas del proyecto UTET.
 match /doctorado_respuestas/{respuestaId} {
   function esAdminDoctorado() {
     return request.auth != null
@@ -13,49 +10,36 @@ match /doctorado_respuestas/{respuestaId} {
       && request.auth.token.firebase.sign_in_provider == "google.com";
   }
 
-  function esParticipanteAnonimo() {
-    return request.auth != null
-      && request.auth.token.firebase.sign_in_provider == "anonymous";
-  }
+  function escala(v) { return v == null || (v is int && v >= 1 && v <= 5); }
 
   function datosValidos() {
     let a = request.resource.data;
-    return a.keys().hasOnly([
-        "etapa", "cedula", "carrera", "answers",
-        "consent", "schemaVersion", "anonUid", "createdAt"
-      ])
-      && a.keys().hasAll([
-        "etapa", "cedula", "carrera", "answers",
-        "consent", "schemaVersion", "anonUid", "createdAt"
-      ])
+    let r = a.r;
+    return a.keys().hasOnly(["etapa", "cedula", "r", "consent", "schemaVersion", "anonUid", "createdAt"])
+      && a.keys().hasAll(["etapa", "cedula", "r", "consent", "schemaVersion", "anonUid", "createdAt"])
       && respuestaId.matches("^[a-f0-9]{64}$")
-      && a.etapa in ["inicio", "desarrollo", "finalizados"]
-      && a.cedula is string
-      && a.cedula.matches("^[0-9]{10}$")
-      && a.carrera is string && a.carrera.size() >= 3 && a.carrera.size() <= 120
+      && a.etapa in ["inicio", "proceso", "final"]
+      && a.cedula is string && a.cedula.matches("^[0-9]{10}$")
       && a.consent == true
-      && a.schemaVersion == 1
+      && a.schemaVersion == 2
       && a.anonUid == request.auth.uid
       && a.createdAt == request.time
-      && a.answers is map
-      && a.answers.keys().hasOnly(["q1","q2","q3","q4","q5","q6","q7","q8","q9","q10"])
-      && a.answers.keys().hasAll(["q1","q2","q3","q4","q5","q6","q7","q8","q9","q10"])
-      && a.answers.q1 is list && a.answers.q1.size() > 0 && a.answers.q1.size() <= 6
-      && a.answers.q9 is list && a.answers.q9.size() > 0 && a.answers.q9.size() <= 2
-      && a.answers.q10 is string && a.answers.q10.size() <= 600
-      && (
-        (a.etapa in ["inicio","desarrollo"]
-          && a.answers.q4 is map
-          && a.answers.q4.keys().hasAll(["problema","fuentes","metodos","datos","redaccion"]))
-        ||
-        (a.etapa == "finalizados"
-          && a.answers.q3 is map
-          && a.answers.q3.keys().hasAll(["problema","fuentes","metodos","datos","redaccion"]))
-      );
+      && r is map
+      && r.keys().hasOnly(["se1","se2","se3","se4","se5","p6","p7","horas","horas_ns","dificultad","dificultad_otra","ia","omitidas"])
+      && r.keys().hasAll(["se1","se2","se3","se4","se5","p6","p7","horas","horas_ns","dificultad","dificultad_otra","ia","omitidas"])
+      && escala(r.se1) && escala(r.se2) && escala(r.se3) && escala(r.se4) && escala(r.se5)
+      && escala(r.p6) && escala(r.p7) && escala(r.ia)
+      && (r.horas == null || (r.horas is number && r.horas >= 0 && r.horas <= 100))
+      && r.horas_ns is bool
+      && (r.dificultad == null || r.dificultad in ["tema","bibliografia","metodologia","analisis","redaccion","tiempo","tecnologia","otra"])
+      && (r.dificultad_otra == null || (r.dificultad_otra is string && r.dificultad_otra.size() <= 200))
+      && r.omitidas is list && r.omitidas.size() <= 10;
   }
 
   allow get, list: if esAdminDoctorado();
-  allow create: if esParticipanteAnonimo() && datosValidos();
-  // Sin actualización ni eliminación: protege el registro original de investigación.
+  allow create: if request.auth != null
+    && request.auth.token.firebase.sign_in_provider == "anonymous"
+    && datosValidos();
+  // Sin actualización ni eliminación: protege el registro original.
   allow update, delete: if false;
 }

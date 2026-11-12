@@ -1,96 +1,106 @@
-// src/questions.js — Instrumentos diagnósticos para tesis doctoral ITSQMET.
-// Version 1.0: propuesta sometida a pilotaje/validación, no escala validada.
-// q1, q4 y q9 se mantienen comparables entre las tres etapas.
+// src/questions.js — Instrumentos v1 (propuesta en validación, no escala validada).
+// se1–se5 son idénticas en las tres etapas: no modificar su texto ni sus opciones.
+export const VERSION = 1;
+
 export const STAGES = {
-  inicio: { label: "Estoy iniciando", title: "Antes de empezar a investigar", subtitle: "Tu preparación y lo que necesitas para comenzar.", icon: "seedling", minutes: "5 min" },
-  desarrollo: { label: "Estoy desarrollando", title: "Mientras elaboras tu artículo", subtitle: "Las clases, los avances y los desafíos reales.", icon: "pen", minutes: "5 min" },
-  finalizados: { label: "Ya finalicé", title: "Después de terminar tu artículo", subtitle: "Lo aprendido y los aspectos que pueden mejorar.", icon: "check", minutes: "5 min" }
+  inicio: { label: "Inicio", title: "Estoy iniciando" },
+  proceso: { label: "En proceso", title: "Voy en la mitad" },
+  final: { label: "Finalización", title: "Ya terminé" }
 };
-export const LEVELS = [
-  ["1","Nada capaz"],["2","Poco capaz"],["3","Moderadamente capaz"],["4","Bastante capaz"],["5","Muy capaz"]
+// Rutas antiguas que siguen funcionando.
+export const ALIASES = { desarrollo: "proceso", finalizados: "final", finalizacion: "final", fin: "final" };
+
+const escala = (a, b, c, d, e) => [[1, a], [2, b], [3, c], [4, d], [5, e]];
+export const CAPACIDAD = escala("Nada capaz", "Poco capaz", "Moderadamente capaz", "Bastante capaz", "Totalmente capaz");
+const PREPARACION = escala("Nada preparado", "Poco preparado", "Moderadamente preparado", "Bastante preparado", "Totalmente preparado");
+const CLAROS = escala("Nada claros", "Poco claros", "Moderadamente claros", "Bastante claros", "Totalmente claros");
+const CLARAS = escala("Nada claras", "Poco claras", "Moderadamente claras", "Bastante claras", "Totalmente claras");
+export const FRECUENCIA = escala("Nunca", "Rara vez", "Algunas veces", "Frecuentemente", "Siempre");
+
+export const DIFICULTADES = [
+  ["tema", "Delimitación del tema"],
+  ["bibliografia", "Búsqueda bibliográfica"],
+  ["metodologia", "Metodología"],
+  ["analisis", "Análisis de resultados"],
+  ["redaccion", "Redacción científica"],
+  ["tiempo", "Tiempo disponible"],
+  ["tecnologia", "Recursos tecnológicos"],
+  ["otra", "Otra"]
 ];
-const experiences = [
-  ["problemas","Investigar problemas relacionados con mi carrera"],
-  ["fuentes","Buscar y analizar artículos científicos"],
-  ["recoleccion","Recopilar información mediante encuestas, entrevistas u otras técnicas"],
-  ["analisis","Analizar datos y elaborar conclusiones"],
-  ["informes","Redactar informes de investigación"],
-  ["ninguna","Ninguna de las anteriores"]
+
+const s = (id, text, options) => ({ id, type: "scale", text, options });
+const COMUNES = [
+  s("se1", "¿Qué tan capaz se considera de formular un problema de investigación claramente delimitado?", CAPACIDAD),
+  s("se2", "¿Qué tan capaz se considera de buscar y seleccionar artículos científicos pertinentes?", CAPACIDAD),
+  s("se3", "¿Qué tan capaz se considera de elegir una metodología adecuada para su investigación?", CAPACIDAD),
+  s("se4", "¿Qué tan capaz se considera de analizar e interpretar resultados de investigación?", CAPACIDAD),
+  s("se5", "¿Qué tan capaz se considera de redactar un artículo académico con estructura científica?", CAPACIDAD)
 ];
-const abilities = [
-  ["problema","Delimitar un tema y formular una pregunta de investigación"],
-  ["fuentes","Buscar información científica confiable"],
-  ["metodos","Seleccionar métodos y técnicas de investigación"],
-  ["datos","Analizar datos y explicar resultados"],
-  ["redaccion","Redactar un artículo académico"]
-];
-const support = [
-  ["proyectos","Realizar investigaciones prácticas durante la carrera"],
-  ["fuentes","Recibir orientación para buscar fuentes científicas"],
-  ["talleres","Participar en talleres de metodología"],
-  ["datos","Aprender a recopilar y analizar datos"],
-  ["redaccion","Practicar la redacción científica"],
-  ["carrera","Recibir orientación específica de mi carrera"],
-  ["retro","Recibir revisiones con observaciones claras"]
-];
-const difficulties = [
-  ["problema","Planteamiento del problema y objetivos"],
-  ["fuentes","Búsqueda y análisis de información científica"],
-  ["metodologia","Elaboración de la metodología"],
-  ["datos","Recopilación y análisis de datos"],
-  ["resultados","Presentación y discusión de resultados"],
-  ["redaccion","Redacción de conclusiones, citas y referencias"],
-  ["ninguna","No he tenido dificultades importantes"]
-];
-const q1 = {id:"q1",type:"multi",question:"Durante tu carrera, antes de comenzar el artículo académico, ¿qué actividades de investigación realizaste?",hint:"Puedes marcar varias opciones.",options:experiences,exclusive:["ninguna"]};
-const q4 = {id:"q4",type:"matrix",question:"Actualmente, ¿qué tan capaz te consideras de realizar estas actividades?",hint:"Responde cada fila según tu capacidad actual. No es una evaluación de notas.",rows:abilities,options:LEVELS};
-const q9 = {id:"q9",type:"multi",max:2,question:"¿Qué tipo de apoyo consideras más importante para elaborar un artículo académico de calidad?",hint:"Selecciona hasta dos.",options:support};
-const open = (question)=>({id:"q10",type:"text",optional:true,question,hint:"Opcional. Puedes dejar esta respuesta en blanco.",maxLength:600});
-const scale = (id,question,special=[])=>({id,type:"single",question,options:[["1","Nada"],["2","Poco"],["3","Moderadamente"],["4","Bastante"],["5","Mucho"],...special]});
-const readiness = (id,question,special=[])=>({id,type:"single",question,options:[["1","Nada preparado"],["2","Poco preparado"],["3","Moderadamente preparado"],["4","Bastante preparado"],["5","Muy preparado"],...special]});
+const horas = text => ({ id: "horas", type: "hours", text });
+const dificultad = text => ({ id: "dificultad", type: "choice", text, options: DIFICULTADES });
+
 export const QUESTIONS = {
   inicio: [
-    q1,
-    {id:"q2",type:"single",question:"Durante tu carrera, ¿con qué frecuencia realizaste trabajos de investigación con orientación docente?",options:[["1","Nunca"],["2","Rara vez"],["3","Algunas veces"],["4","Frecuentemente"],["5","Muy frecuentemente"]]},
-    readiness("q3","Al comenzar el artículo académico, ¿qué tan preparado te sientes para investigar?"),
-    q4,
-    {id:"q5",type:"single",question:"¿En qué situación se encuentra tu tema de investigación?",options:[["buscando","Todavía estoy buscando un tema"],["idea","Tengo una idea, pero necesito delimitarla"],["revision","Ya presenté el tema para revisión"],["aprobado","Mi tema ya fue aprobado"]]},
-    {id:"q6",type:"single",question:"¿Cuál ha sido tu principal dificultad para elegir o definir el tema?",options:[["problema","Encontrar un problema relacionado con mi carrera"],["delimitar","Delimitar el tema"],["fuentes","Encontrar información científica"],["pregunta","Formular la pregunta y los objetivos"],["ninguna","No he tenido dificultades"],["sin_empezar","Todavía no he comenzado a elegirlo"]]},
-    {id:"q7",type:"single",question:"¿Qué tan claras te resultaron las explicaciones de la inducción sobre el proceso?",options:[["1","Nada claras"],["2","Poco claras"],["3","Moderadamente claras"],["4","Bastante claras"],["5","Muy claras"],["no_aplica","Todavía no he participado"]]},
-    {id:"q8",type:"multi",max:2,question:"¿Qué partes del artículo crees que podrían resultarte más difíciles?",hint:"Selecciona hasta dos. Responde según lo que esperas, no lo que ya viviste.",options:[["problema","Plantear el problema y los objetivos"],["fuentes","Buscar y analizar información científica"],["metodologia","Desarrollar la metodología"],["datos","Recopilar y analizar datos"],["redaccion","Redactar resultados, discusión y conclusiones"],["defensa","Preparar la defensa oral"],["no_se","Todavía no lo sé"]],exclusive:["no_se"]},
-    q9,
-    open("¿Qué te gustaría aprender o reforzar para elaborar mejor tu artículo académico?")
+    ...COMUNES,
+    s("p6", "¿Qué tan preparado se considera para comenzar la elaboración del artículo académico?", PREPARACION),
+    s("p7", "¿Qué tan claros tiene los requisitos, actividades y criterios de evaluación del proceso?", CLAROS),
+    horas("¿Cuántas horas semanales estima que podrá dedicar a la elaboración del artículo?"),
+    dificultad("¿Cuál considera que será su principal dificultad?"),
+    s("ia", "¿Con qué frecuencia prevé utilizar herramientas de inteligencia artificial durante la elaboración del artículo?", FRECUENCIA)
   ],
-  desarrollo: [
-    q1,
-    {id:"q2",type:"single",question:"¿En cuántas de las tres clases de metodología has participado?",options:[["0","En ninguna"],["1","En una clase"],["2","En dos clases"],["3","En las tres clases"]]},
-    scale("q3","¿Qué tanto te han ayudado las clases de metodología para desarrollar tu artículo?",[["no_aplica","Todavía no he participado"]]),
-    q4,
-    {id:"q5",type:"single",question:"¿Cuánto te ha ayudado el refuerzo por carrera a relacionar la investigación con tu profesión?",options:[["1","Nada"],["2","Poco"],["3","Moderadamente"],["4","Bastante"],["5","Mucho"],["no_aplica","Todavía no he participado"]]},
-    {id:"q6",type:"multi",max:2,question:"¿En qué partes del artículo has encontrado mayores dificultades?",hint:"Selecciona hasta dos.",options:difficulties,exclusive:["ninguna"]},
-    {id:"q7",type:"single",question:"¿Qué tan claras han sido las observaciones recibidas para mejorar tu artículo?",options:[["1","Nada claras"],["2","Poco claras"],["3","Moderadamente claras"],["4","Bastante claras"],["5","Muy claras"],["no_aplica","Todavía no he recibido revisiones"]]},
-    {id:"q8",type:"multi",max:2,question:"¿Qué factores han dificultado más tu avance?",hint:"Selecciona hasta dos.",options:[["conocimientos","Conocimientos insuficientes sobre investigación"],["fuentes","Dificultad para conseguir fuentes científicas"],["datos","Dificultad para recopilar o analizar datos"],["tiempo","Poco tiempo disponible"],["redaccion","Dificultades para redactar"],["orientacion","Necesidad de mayor orientación"],["correcciones","Dificultad para aplicar las correcciones"],["ninguno","Ninguno"]],exclusive:["ninguno"]},
-    q9,
-    open("¿Qué mejorarías de las clases, orientaciones o revisiones para facilitar tu artículo?")
+  proceso: [
+    ...COMUNES,
+    s("p6", "¿Con qué frecuencia recibe retroalimentación académica útil para mejorar su artículo?", FRECUENCIA),
+    s("p7", "¿Qué tan claras son las observaciones y correcciones que recibe?", CLARAS),
+    horas("¿Cuántas horas semanales dedica actualmente a elaborar su artículo?"),
+    dificultad("¿Cuál es su principal dificultad actual?"),
+    s("ia", "¿Con qué frecuencia utiliza herramientas de inteligencia artificial durante la elaboración del artículo?", FRECUENCIA)
   ],
-  finalizados: [
-    q1,
-    readiness("q2","Cuando comenzaste el artículo, ¿qué tan preparado te sentías para investigar?",[["no_recuerdo","No recuerdo"]]),
-    { ...q4, id:"q3" },
-    {id:"q4",type:"multi",max:2,question:"¿En qué partes del artículo encontraste mayores dificultades?",hint:"Selecciona hasta dos.",options:difficulties,exclusive:["ninguna"]},
-    {id:"q5",type:"single",question:"¿Qué actividad te ayudó más a completar tu artículo?",options:[["metodologia","Las clases de metodología"],["refuerzo","El refuerzo por carrera"],["revisiones","Las observaciones en las revisiones"],["previa","Las investigaciones realizadas durante mi carrera"],["autonomo","El trabajo independiente"],["companeros","La colaboración de compañeros"],["ninguna","Ninguna de las anteriores"]]},
-    {id:"q6",type:"single",question:"¿Qué tan suficientes fueron las clases de metodología para desarrollar tu artículo?",options:[["1","Nada suficientes"],["2","Poco suficientes"],["3","Moderadamente suficientes"],["4","Bastante suficientes"],["5","Totalmente suficientes"],["no_aplica","No participé en esas clases"]]},
-    {id:"q7",type:"single",question:"¿Qué tan útiles fueron las observaciones de las revisiones para mejorar el artículo final?",options:[["1","Nada útiles"],["2","Poco útiles"],["3","Moderadamente útiles"],["4","Bastante útiles"],["5","Muy útiles"],["no_aplica","No recibí observaciones"]]},
-    readiness("q8","¿Qué tan preparado te sentiste para explicar y defender tu investigación?"),
-    q9,
-    open("Si volvieras a elaborar el artículo, ¿qué cambiarías de la formación o del acompañamiento recibido?")
+  final: [
+    ...COMUNES,
+    s("p6", "¿Con qué frecuencia recibió retroalimentación académica útil para mejorar su artículo?", FRECUENCIA),
+    s("p7", "¿Qué tan claras fueron las observaciones y correcciones que recibió?", CLARAS),
+    horas("¿Cuántas horas semanales dedicó, en promedio, a elaborar su artículo?"),
+    dificultad("¿Cuál fue su principal dificultad durante la elaboración del artículo?"),
+    s("ia", "¿Con qué frecuencia utilizó herramientas de inteligencia artificial durante la elaboración del artículo?", FRECUENCIA)
   ]
 };
-export function validateInstrument() {
-  for (const stage of Object.keys(STAGES)) {
-    const items = QUESTIONS[stage];
-    if (!items || items.length !== 10 || new Set(items.map(q=>q.id)).size !== 10) return false;
-    if (items.some(q=>!q.question || !["single","multi","matrix","text"].includes(q.type))) return false;
+
+export const IDS = ["se1", "se2", "se3", "se4", "se5", "p6", "p7", "horas", "dificultad", "ia"];
+
+// Cédula ecuatoriana: 10 dígitos con dígito verificador (módulo 10).
+export function cedulaValida(c) {
+  if (!/^\d{10}$/.test(c)) return false;
+  const prov = +c.slice(0, 2);
+  if (!((prov >= 1 && prov <= 24) || prov === 30) || +c[2] > 5) return false;
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    let v = +c[i] * (i % 2 === 0 ? 2 : 1);
+    if (v > 9) v -= 9;
+    sum += v;
   }
-  return true;
+  return (10 - (sum % 10)) % 10 === +c[9];
+}
+
+// Convierte las respuestas del formulario en la fila que se guarda.
+// answers[id] = valor | "NR" (prefiero no responder) | "NS" (solo horas: no sabe).
+export function toRow(stage, cedula, answers) {
+  const row = { etapa: stage, cedula, version: VERSION, horas_ns: false, omitidas: [] };
+  for (const id of IDS) {
+    const v = answers[id];
+    if (v === undefined || v === "") throw new Error("Falta responder una pregunta.");
+    if (v === "NR") { row.omitidas.push(id); row[id] = null; }
+    else if (id === "horas") {
+      if (v === "NS") { row.horas = null; row.horas_ns = true; }
+      else {
+        const n = Math.round(Number(String(v).replace(",", ".")) * 10) / 10;
+        if (!Number.isFinite(n) || n < 0 || n > 100) throw new Error("Horas no válidas.");
+        row.horas = n;
+      }
+    } else if (id === "dificultad") row[id] = String(v);
+    else row[id] = Number(v);
+  }
+  const otra = String(answers.dificultad_otra || "").trim().slice(0, 200);
+  row.dificultad_otra = row.dificultad === "otra" && otra ? otra : null;
+  return row;
 }
