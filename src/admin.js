@@ -194,11 +194,11 @@ function tablaRespuestas(data) {
     (!data.length ? '<p class="note">No hay respuestas con estos filtros.</p>' : ''));
 }
 function utetSection() {
-  const clasificados = new Set(todas().filter(r => r.fuenteClasificacion === "firebase_utet").map(r => r.cedula)).size;
+  const clasificados = new Set(todas().filter(r => r.carrera).map(r => r.cedula)).size;
   const pendientes = new Set(todas().filter(r => !r.carrera).map(r => r.cedula)).size;
   return section("Cruce de carreras con Firebase UTET",
     '<p class="note">Origen: proyecto UTET, colecciones Estudiante, matriculas y sus equivalentes anteriores. Las cédulas se cruzan exclusivamente con los participantes de las encuestas.</p>' +
-    '<div class="dash-stats">' + stat(clasificados,"Estudiantes cruzados") + stat(pendientes,"Sin carrera") + '</div>' +
+    '<div class="dash-stats">' + stat(clasificados,"Con carrera registrada") + stat(pendientes,"Sin carrera") + '</div>' +
     '<button class="btn ghost" data-a="sync-utet"' + (utetBusy ? ' disabled' : '') + '>' +
     (utetBusy ? 'Sincronizando UTET…' : 'Sincronizar ahora con Firebase UTET') + '</button>' +
     '<p class="note" data-utet-msg role="status">' + esc(utetStatus || "La primera sincronización solicita autorización con Google. Tras vincularla, se actualiza al ingresar de nuevo al panel.") + '</p>' +
@@ -227,8 +227,7 @@ async function sincronizarUtet(interactive, automatic = false) {
       return !prev || (r.carrera && r.carrera !== prev.carrera) ||
         (r.modalidad && r.modalidad !== prev.modalidad) ||
         (r.sede && r.sede !== prev.sede) ||
-        (r.periodoId && r.periodoId !== prev.periodoId) ||
-        prev.fuenteClasificacion !== "firebase_utet";
+        (prev.periodoId !== undefined && r.periodoId && r.periodoId !== prev.periodoId);
     });
     let guardadas = 0;
     for (let i=0;i<nuevas.length;i+=200) {
