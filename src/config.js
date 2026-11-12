@@ -11,3 +11,15 @@ export const FIREBASE = globalThis.DOCTORADO_FIREBASE_CONFIG || FIREBASE_FIJO;
 export const SUPABASE = { url: "", key: "" };
 
 export const ADMIN_EMAIL = "jeffersonvillarreal91@gmail.com";
+
+
+// Proyecto Firebase UTET (app Requisitos). Configuración WEB pública; no es una credencial
+// administrativa. El acceso a Firestore requiere Google Auth y reglas restrictivas.
+export const UTET_FIREBASE = Object.freeze({
+  apiKey: "AIzaSyCaHf1C0BB0X_H3BDZ1o-UDAsPmLTjsZLA",
+  authDomain: "utet-4387a.firebaseapp.com",
+  projectId: "utet-4387a",
+  storageBucket: "utet-4387a.firebasestorage.app",
+  messagingSenderId: "902848131454",
+  appId: "1:902848131454:web:47f515eb6480834724c32f"
+});
