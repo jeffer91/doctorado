@@ -2,12 +2,14 @@
 import { API, ADMIN_EMAIL } from "./config.js";
 import { STAGES, ARTICULO, QUESTIONS, FRECUENCIA, DIFICULTADES } from "./questions.js";
 import { firebaseReady, fetchBackup, firebaseError } from "./firebase.js";
+import { conectarUtet, sesionUtet, leerClasificacionesUtet, errorUtet } from "./firebase-utet.js";
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const COLS = ["codigo", "carrera", "modalidad", "etapa", "created_at", "version", "se1", "se2", "se3", "se4", "se5", "p6", "p7", "horas", "horas_ns", "dificultad", "dificultad_otra", "ia", "omitidas", "origen"];
 const COLS_REG = ["codigo", "carrera", "modalidad", "etapa", "created_at", "version", "gusto", "eleccion", "razon_si", "razon_si_otra", "razon_no", "razon_no_otra", "preparacion", "formacion", "dificultad", "dificultad_otra", "apoyo", "apoyo_otra", "aporte_articulo", "aporte_examen", "omitidas", "origen"];
 const KEY = "doctorado:admin";
-let root = null, rows = [], regs = [], view = "resumen", careerFilter = "", fromDate = "", toDate = "", search = "", msg = "";
+let root = null, rows = [], regs = [], view = "resumen", careerFilter = "", sedeFilter = "", periodoFilter = "", fromDate = "", toDate = "", search = "", msg = "";
+let utetBusy = false, utetStatus = "";
 
 const token = () => { try { return sessionStorage.getItem(KEY); } catch { return null; } };
 const setToken = t => { try { t ? sessionStorage.setItem(KEY, t) : sessionStorage.removeItem(KEY); } catch { /* sin almacenamiento */ } };
@@ -36,6 +38,9 @@ export async function renderAdmin(el) {
     return frame('<h1>Panel</h1><p class="lead">No se pudieron cargar los datos. Recarga la página.</p>');
   }
   panel();
+  // Sincronización automática al abrir el panel, solo tras vincular Google una vez.
+  // No se muestra ninguna ventana emergente sin interacción del administrador.
+  if (sessionStorage.getItem("doctorado:utet-linked") === "1") void sincronizarUtet(false, true);
 }
 
 function login(error = "") {
@@ -118,6 +123,8 @@ function filtradas() {
   const q = search.trim().toLowerCase();
   return todas().filter(r =>
     (!careerFilter || (careerFilter === "__vacia__" ? !r.carrera : r.carrera === careerFilter)) &&
+    (!sedeFilter || (sedeFilter === "__vacia__" ? !r.sede : r.sede === sedeFilter)) &&
+    (!periodoFilter || r.periodoId === periodoFilter) &&
     (!fromDate || fecha(r) >= fromDate) && (!toDate || fecha(r) <= toDate) &&
     (!q || String(r.cedula || "").includes(q) || String(r.codigo || "").toLowerCase().includes(q) ||
       carrera(r).toLowerCase().includes(q))
@@ -184,9 +191,67 @@ function tablaRespuestas(data) {
     (data.length > 200 ? '<p class="note">Se muestran los primeros 200 registros. La exportación incluye todos los resultados filtrados.</p>' : '') +
     (!data.length ? '<p class="note">No hay respuestas con estos filtros.</p>' : ''));
 }
+function utetSection() {
+  const clasificados = new Set(todas().filter(r => r.fuenteClasificacion === "firebase_utet").map(r => r.cedula)).size;
+  const pendientes = new Set(todas().filter(r => !r.carrera).map(r => r.cedula)).size;
+  return section("Cruce de carreras con Firebase UTET",
+    '<p class="note">Origen: proyecto UTET, colecciones Estudiante, matriculas y sus equivalentes anteriores. Las cédulas se cruzan exclusivamente con los participantes de las encuestas.</p>' +
+    '<div class="dash-stats">' + stat(clasificados,"Estudiantes cruzados") + stat(pendientes,"Sin carrera") + '</div>' +
+    '<button class="btn ghost" data-a="sync-utet"' + (utetBusy ? ' disabled' : '') + '>' +
+    (utetBusy ? 'Sincronizando UTET…' : 'Sincronizar ahora con Firebase UTET') + '</button>' +
+    '<p class="note" data-utet-msg role="status">' + esc(utetStatus || "La primera sincronización solicita autorización con Google. Tras vincularla, se actualiza al ingresar de nuevo al panel.") + '</p>' +
+    '<p class="note">La sincronización guarda la clasificación en Neon y no cambia las respuestas ni escribe en Firebase. Se necesita acceso de lectura autenticado en Firebase UTET.</p>');
+}
+async function sincronizarUtet(interactive, automatic = false) {
+  if (utetBusy || !token()) return;
+  const LAST = "doctorado:utet-last";
+  const last = Number(sessionStorage.getItem(LAST) || 0);
+  if (automatic && Date.now() - last < 15*60*1000) return;
+  utetBusy = true;
+  utetStatus = "Consultando UTET y cruzando por cédula...";
+  root.querySelectorAll("[data-utet-msg]").forEach(el => el.textContent = utetStatus);
+  root.querySelectorAll("[data-a='sync-utet']").forEach(el => { el.disabled = true; el.textContent = "Sincronizando UTET…"; });
+  try {
+    if (interactive) await conectarUtet();
+    else if (!await sesionUtet()) return;
+    const cedulas = [...new Set(todas().map(r => r.cedula).filter(Boolean))];
+    const result = await leerClasificacionesUtet(cedulas);
+    if (result.avisos.length && result.encontradas === 0) {
+      throw new Error("Acceso parcial a Firebase. " + result.avisos.slice(0,2).join(" "));
+    }
+    const existing = new Map(todas().map(r => [r.cedula,r]));
+    const nuevas = result.filas.filter(r => {
+      const prev = existing.get(r.cedula);
+      return !prev || (r.carrera && r.carrera !== prev.carrera) ||
+        (r.modalidad && r.modalidad !== prev.modalidad) ||
+        (r.sede && r.sede !== prev.sede) ||
+        (r.periodoId && r.periodoId !== prev.periodoId) ||
+        prev.fuenteClasificacion !== "firebase_utet";
+    });
+    let guardadas = 0;
+    for (let i=0;i<nuevas.length;i+=200) {
+      const res = await api("/admin/clasificar", { filas: nuevas.slice(i,i+200) });
+      guardadas += res.guardadas;
+    }
+    await loadRows();
+    sessionStorage.setItem("doctorado:utet-linked","1");
+    // Si hay fallos parciales se permite volver a intentar en la siguiente visita.
+    if (!result.avisos.length) sessionStorage.setItem(LAST,String(Date.now()));
+    utetStatus = "UTET: " + result.encontradas + " de " + result.consultadas +
+      " estudiantes localizados; " + guardadas + " clasificaciones guardadas en Neon; " +
+      result.sinCoincidencia + " sin coincidencia." +
+      (result.avisos.length ? " Avisos: " + result.avisos.slice(0,2).join(" | ") : "");
+  } catch (e) {
+    utetStatus = "No se completó el cruce: " + errorUtet(e);
+  } finally {
+    utetBusy = false;
+    if (root?.querySelector(".dashboard")) panel();
+  }
+}
+
 function configPanel() {
   const base = location.origin + location.pathname;
-  return '<div class="dash-two">' +
+  return utetSection() + '<div class="dash-two">' +
     '<div>' + section("Clasificar estudiantes por carrera y modalidad",
       '<p class="note">Pega un listado institucional, una fila por estudiante, con el formato <strong>cédula;carrera;modalidad</strong>. Modalidad: articulo, complexivo o trabajo. Puedes dejar la modalidad vacía. Importar no modifica las respuestas originales.</p>' +
       '<label class="field" for="clasificacion">Cédula; carrera; modalidad</label>' +
@@ -204,6 +269,8 @@ function configPanel() {
 function panel() {
   const filtered = filtradas(), data = porVista(filtered);
   const careers = [...new Set(todas().map(r => r.carrera).filter(Boolean))].sort((a,b) => a.localeCompare(b,"es"));
+  const sedes = [...new Set(todas().map(r => r.sede).filter(Boolean))].sort((a,b) => a.localeCompare(b,"es"));
+  const periodos = [...new Set(todas().map(r => r.periodoId).filter(Boolean))].sort((a,b) => b.localeCompare(a,"es"));
   const nav = NAV.map(([title,items]) => '<div class="dash-nav-group"><p>' + esc(title) + '</p>' +
     items.map(([key,name]) => '<button class="dash-nav-item' + (view === key ? ' active' : '') + '" data-v="' + key + '"' +
     (view === key ? ' aria-current="page"' : '') + '>' + esc(name) + '</button>').join("") + '</div>').join("");
@@ -212,12 +279,20 @@ function panel() {
     (careerFilter === "__vacia__" ? ' selected' : '') + '>Sin carrera</option>' +
     careers.map(c => '<option value="' + esc(c) + '"' + (careerFilter === c ? ' selected' : '') + '>' + esc(c) + '</option>').join("") +
     '</select></label>' +
+    '<label>Sede<select data-filter="sede"><option value="">Todas las sedes</option><option value="__vacia__"' +
+    (sedeFilter === "__vacia__" ? " selected" : "") + '>Sin sede</option>' +
+    sedes.map(c => '<option value="' + esc(c) + '"' + (sedeFilter === c ? " selected" : "") + '>' + esc(c) + '</option>').join("") +
+    '</select></label>' +
+    '<label>Período UTET<select data-filter="periodo"><option value="">Todos</option>' +
+    periodos.map(c => '<option value="' + esc(c) + '"' + (periodoFilter === c ? " selected" : "") + '>' + esc(c) + '</option>').join("") +
+    '</select></label>' +
     '<label>Desde<input type="date" data-filter="from" value="' + esc(fromDate) + '"></label>' +
     '<label>Hasta<input type="date" data-filter="to" value="' + esc(toDate) + '"></label>' +
     '<label>Buscar cédula o código<input type="search" data-filter="search" placeholder="Buscar..." value="' + esc(search) + '"></label>' +
     '<button class="btn ghost" data-a="reset">Limpiar filtros</button></div>';
   let body = "";
   if (view === "resumen") body = metricas(data) + '<div class="dash-two"><div>' + etapaCount(data) + '</div><div>' + modalidadCount(data) + '</div></div>' +
+    utetSection() +
     section("Carreras registradas", '<p class="note">' + [...new Set(data.map(carrera).filter(k => k !== "Sin carrera"))].length +
       ' carreras identificadas · ' + data.filter(r => !r.carrera).length + ' respuestas pendientes de clasificar.</p>') +
       '<button class="btn ghost" data-v="carreras">Ver distribución por carrera</button>';
@@ -246,6 +321,8 @@ function onChange(ev) {
   const f = ev.target.dataset.filter;
   if (!f) return;
   if (f === "career") careerFilter = ev.target.value;
+  else if (f === "sede") sedeFilter = ev.target.value;
+  else if (f === "periodo") periodoFilter = ev.target.value;
   else if (f === "from") fromDate = ev.target.value;
   else if (f === "to") toDate = ev.target.value;
   else if (f === "search") search = ev.target.value.trim();
@@ -268,7 +345,8 @@ async function onClick(ev) {
   switch (b.dataset.a) {
     case "out": try { await api("/admin/salir", {}); } catch {} setToken(null); rows = []; regs = []; return login();
     case "reload": return renderAdmin(root);
-    case "reset": careerFilter = ""; fromDate = ""; toDate = ""; search = ""; return panel();
+    case "reset": careerFilter = ""; sedeFilter = ""; periodoFilter = ""; fromDate = ""; toDate = ""; search = ""; return panel();
+    case "sync-utet": return sincronizarUtet(true);
     case "csv": return csv(false);
     case "csvid": return confirm("Este archivo incluye cédulas. Guárdalo en un lugar seguro.") && csv(true);
     case "import": return importar(b);
