@@ -181,7 +181,7 @@ async function router() {
   if (STAGES[r]) {
     st = load(r);
     const periodo = new URLSearchParams(location.hash.split("?")[1] || "").get("periodo") || "";
-    if (periodo && periodo.length <= 120 && !/[\\x00-\\x1f]/.test(periodo)) {
+    if (periodo && periodo.length <= 120 && !/[\u0000-\u001f]/.test(periodo)) {
       st.periodoId = periodo;
       save();
     }
