@@ -9,7 +9,7 @@ const COLS = ["codigo", "carrera", "modalidad", "etapa", "created_at", "version"
 const COLS_REG = ["codigo", "carrera", "modalidad", "etapa", "created_at", "version", "gusto", "eleccion", "razon_si", "razon_si_otra", "razon_no", "razon_no_otra", "preparacion", "formacion", "dificultad", "dificultad_otra", "apoyo", "apoyo_otra", "aporte_articulo", "aporte_examen", "omitidas", "origen"];
 const KEY = "doctorado:admin";
 let root = null, rows = [], regs = [], view = "resumen", careerFilter = "", sedeFilter = "", periodoFilter = "", fromDate = "", toDate = "", search = "", msg = "";
-let utetBusy = false, utetStatus = "";
+let utetBusy = false, utetStatus = "", utetTimer = null;
 
 const token = () => { try { return sessionStorage.getItem(KEY); } catch { return null; } };
 const setToken = t => { try { t ? sessionStorage.setItem(KEY, t) : sessionStorage.removeItem(KEY); } catch { /* sin almacenamiento */ } };
@@ -43,6 +43,7 @@ export async function renderAdmin(el) {
   // Sincronización automática al abrir el panel, solo tras vincular Google una vez.
   // No se muestra ninguna ventana emergente sin interacción del administrador.
   if (sessionStorage.getItem("doctorado:utet-linked") === "1") void sincronizarUtet(false, true);
+  iniciarAutosincronizacion();
 }
 
 function login(error = "") {
@@ -204,6 +205,15 @@ function utetSection() {
     '<p class="note" data-utet-msg role="status">' + esc(utetStatus || "La primera sincronización solicita autorización con Google. Tras vincularla, se actualiza al ingresar de nuevo al panel.") + '</p>' +
     '<p class="note">La sincronización guarda la clasificación en Neon y no cambia las respuestas ni escribe en Firebase. Se necesita acceso de lectura autenticado en Firebase UTET.</p>');
 }
+function iniciarAutosincronizacion() {
+  if (utetTimer) return;
+  utetTimer = setInterval(() => {
+    if (location.hash.startsWith("#/admin") && token() &&
+        sessionStorage.getItem("doctorado:utet-linked") === "1") {
+      void sincronizarUtet(false, true);
+    }
+  }, 15 * 60 * 1000);
+}
 async function sincronizarUtet(interactive, automatic = false) {
   if (utetBusy || !token()) return;
   const LAST = "doctorado:utet-last";
@@ -216,6 +226,8 @@ async function sincronizarUtet(interactive, automatic = false) {
   try {
     if (interactive) await conectarUtet();
     else if (!await sesionUtet()) return;
+    // Incluye respuestas recibidas mientras el administrador tiene abierto el panel.
+    await loadRows();
     const cedulas = [...new Set(todas().map(r => r.cedula).filter(Boolean))];
     const result = await leerClasificacionesUtet(cedulas);
     if (result.avisos.length && result.encontradas === 0) {
@@ -236,6 +248,7 @@ async function sincronizarUtet(interactive, automatic = false) {
     }
     await loadRows();
     sessionStorage.setItem("doctorado:utet-linked","1");
+    iniciarAutosincronizacion();
     // Si hay fallos parciales se permite volver a intentar en la siguiente visita.
     if (!result.avisos.length) sessionStorage.setItem(LAST,String(Date.now()));
     utetStatus = "UTET: " + result.encontradas + " de " + result.consultadas +
@@ -344,7 +357,9 @@ async function onClick(ev) {
     return;
   }
   switch (b.dataset.a) {
-    case "out": try { await api("/admin/salir", {}); } catch {} setToken(null); rows = []; regs = []; return login();
+    case "out": try { await api("/admin/salir", {}); } catch {} setToken(null); rows = []; regs = [];
+      if (utetTimer) clearInterval(utetTimer); utetTimer = null;
+      return login();
     case "reload": return renderAdmin(root);
     case "reset": careerFilter = ""; sedeFilter = ""; periodoFilter = ""; fromDate = ""; toDate = ""; search = ""; return panel();
     case "sync-utet": return sincronizarUtet(true);
