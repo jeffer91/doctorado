@@ -136,6 +136,9 @@ async function manejar(req) {
   if (ruta === "POST /respuestas") {
     const f = limpiar(await body(req));
     if (!f) return json(req, 400, { error: "invalida" });
+    const periodo = f.cols.find(x => x[0] === "periodo_id")?.[1];
+    if (periodo && !(await q("select 1 from doctorado_periodos where periodo_id=$1",periodo)).length)
+      return json(req, 400, { error: "periodo_desconocido" });
     return (await insertar(f)) ? json(req, 201, { ok: true }) : json(req, 409, { error: "duplicada" });
   }
 
