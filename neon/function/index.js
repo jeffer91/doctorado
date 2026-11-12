@@ -76,6 +76,9 @@ function limpiar(r) {
   const omitidas = Array.isArray(r.omitidas) ? [...new Set(r.omitidas)].filter(x => ids.includes(x)) : [];
   const cols = [["cedula", r.cedula, "text"], ["omitidas", "{" + omitidas.join(",") + "}", "text[]"]];
   if (e === ARTICULO) cols.push(["etapa", r.etapa, "text"]);
+  const periodoId = typeof r.periodoId === "string" ? r.periodoId.trim() : "";
+  if (periodoId.length > 120 || /[\x00-\x1f]/.test(periodoId)) return null;
+  cols.push(["periodo_id", periodoId, "text"]);
   for (const k of e.escalas) {
     const v = r[k] ?? null;
     if (v !== null && !(Number.isInteger(v) && v >= 1 && v <= 5)) return null;
@@ -159,17 +162,54 @@ async function manejar(req) {
     if (!s) return json(req, 401, { error: "sesion" });
 
     if (ruta === "GET /admin/respuestas") {
-      const leer = async tabla => JSON.parse((await q(
-        `select coalesce(json_agg((to_jsonb(t) - 'id') ||
-           jsonb_build_object('carrera', coalesce(cl.carrera, ''),
-                              'modalidad', coalesce(cl.modalidad, ''),
-                              'sede', coalesce(cl.sede, ''),
-                              'periodoId', coalesce(cl.periodo_id, ''),
-                              'fuenteClasificacion', coalesce(cl.fuente, ''),
-                              'fechaClasificacion', cl.sincronizado_en)
-           order by t.created_at desc), '[]')::text
-         from ${tabla} t left join doctorado_clasificacion cl on cl.cedula = t.cedula`))[0][0]);
-      return json(req, 200, { filas: await leer("doctorado_respuestas"), regulares: await leer("doctorado_regulares") });
+      const leer = async (tabla, fase) => {
+        const filas = await q(
+          `select coalesce(json_agg(
+            (to_jsonb(t) - 'id' - 'periodo_id') ||
+            jsonb_build_object(
+              'etapa', ${fase === "regulares" ? "'regulares'" : "t.etapa"},
+              'periodoId', coalesce(nullif(t.periodo_id, ''), a.periodo_id, ''),
+              'periodoFuente', case when t.periodo_id <> '' then 'encuesta'
+                else coalesce(a.fuente, 'pendiente') end,
+              'carrera', coalesce(m.carrera, ''),
+              'modalidad', coalesce(m.modalidad, ''),
+              'sede', coalesce(m.sede, ''),
+              'fuenteClasificacion', coalesce(m.fuente, ''))
+            order by t.created_at desc), '[]')::text
+          from ${tabla} t
+          left join doctorado_asignaciones a on a.cedula = t.cedula
+            and a.etapa = ${fase === "regulares" ? "'regulares'" : "t.etapa"}
+          left join doctorado_matriculas m on m.cedula = t.cedula
+            and m.periodo_id = coalesce(nullif(t.periodo_id, ''), a.periodo_id)`);
+        return JSON.parse(filas[0][0]);
+      };
+      return json(req, 200, {
+        filas: await leer("doctorado_respuestas", "articulo"),
+        regulares: await leer("doctorado_regulares", "regulares")
+      });
+    }
+    if (ruta === "GET /admin/periodos") {
+      const p = await q("select coalesce(json_agg(json_build_object('id',periodo_id,'nombre',nombre,'inicio',inicio,'fin',fin) order by periodo_id desc),'[]')::text from doctorado_periodos");
+      const status = await q("select coalesce(row_to_json(s)::text, '{}') from doctorado_sync_estado s where origen = 'firebase_utet'");
+      const c = await q("select coalesce(json_agg(json_build_object('cedula',cedula,'periodoId',periodo_id,'carrera',carrera) order by periodo_id desc),'[]')::text from doctorado_matriculas where cedula in (select cedula from doctorado_respuestas union select cedula from doctorado_regulares)");
+      return json(req, 200, { periodos: JSON.parse(p[0][0]), estado: JSON.parse(status[0]?.[0] || '{}'), candidatos: JSON.parse(c[0][0]) });
+    }
+    if (ruta === "POST /admin/asignar-periodo") {
+      const b = await body(req);
+      const cedula = String(b.cedula || ""), etapa = String(b.etapa || ""), periodo = String(b.periodoId || "");
+      if (!/^[0-9]{10}$/.test(cedula) || !ENCUESTAS[etapa] || !periodo || periodo.length > 120)
+        return json(req, 400, { error: "invalida" });
+      const t = ENCUESTAS[etapa].tabla;
+      const exists = await q(
+        `select '1' from ${t} r join doctorado_matriculas m on m.cedula=r.cedula
+        where r.cedula=$1 and m.periodo_id=$2 and coalesce(r.periodo_id,'') in ('',$2)
+        ${etapa === "regulares" ? "" : "and r.etapa=$3"} limit 1`,
+        ...(etapa === "regulares" ? [cedula,periodo] : [cedula,periodo,etapa]));
+      if (!exists.length) return json(req, 409, { error:"matricula_no_coincide" });
+      await q(
+        "insert into doctorado_asignaciones (cedula,etapa,periodo_id,fuente) values ($1,$2,$3,'manual') on conflict (cedula,etapa) do update set periodo_id=excluded.periodo_id,fuente='manual',actualizado=now()",
+        cedula,etapa,periodo);
+      return json(req, 200, {ok:true});
     }
     if (ruta === "POST /admin/clasificar") {
       const filas = (await body(req)).filas;

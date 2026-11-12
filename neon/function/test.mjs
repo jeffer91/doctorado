@@ -89,3 +89,23 @@ test("clasificación por carrera y modalidad sin modificar encuestas", async () 
   assert.equal(data.regulares.find(x => x.cedula === body.filas[0].cedula).modalidad, "complexivo");
   assert.equal(data.filas[0].se1, 1);
 });
+
+test("periodos, asignación por cédula y etapa, y aislamiento entre períodos", async () => {
+  await db.query("insert into doctorado_periodos(periodo_id,nombre) values ('2026A','Abril–septiembre 2026'),('2026B','Octubre 2026–marzo 2027')");
+  await db.query("insert into doctorado_matriculas(cedula,periodo_id,carrera,modalidad,sede) values ('1710034065','2026A','Enfermería','complexivo','Manta'),('1710034065','2026B','Software','articulo','Matriz')");
+  const r = await call("POST","/admin/login",{email:"a@b.c",clave:"otraclave99"});
+  const {token} = await r.json();
+  const ps = await (await call("GET","/admin/periodos",null,token)).json();
+  assert.equal(ps.periodos.length,2);
+  assert.equal(ps.candidatos.length,2);
+  let d = await (await call("GET","/admin/respuestas",null,token)).json();
+  assert.equal(d.filas[0].periodoId, "");
+  assert.equal(d.filas[0].carrera, "");
+  assert.equal((await call("POST","/admin/asignar-periodo",{cedula:"1710034065",etapa:"inicio",periodoId:"2026A"})).status,401);
+  assert.equal((await call("POST","/admin/asignar-periodo",{cedula:"1710034065",etapa:"inicio",periodoId:"2026A"},token)).status,200);
+  d = await (await call("GET","/admin/respuestas",null,token)).json();
+  assert.equal(d.filas.find(x=>x.etapa==="inicio").carrera,"Enfermería");
+  assert.equal(d.filas.find(x=>x.etapa==="inicio").periodoId,"2026A");
+  assert.equal(d.filas.find(x=>x.etapa==="final").periodoId,"");
+  assert.equal((await call("POST","/admin/asignar-periodo",{cedula:"1710034065",etapa:"final",periodoId:"NO_EXISTE"},token)).status,409);
+});

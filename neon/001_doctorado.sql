@@ -141,3 +141,46 @@ alter table public.doctorado_clasificacion add column if not exists sede text no
 alter table public.doctorado_clasificacion add column if not exists periodo_id text not null default '';
 alter table public.doctorado_clasificacion add column if not exists fuente text not null default 'manual';
 alter table public.doctorado_clasificacion add column if not exists sincronizado_en timestamptz;
+
+
+-- Catálogo y matrículas académicas por período. No se eliminan datos anteriores.
+create table if not exists public.doctorado_periodos (
+  periodo_id text primary key check (length(periodo_id) between 1 and 120),
+  nombre text not null check (length(nombre) between 1 and 200),
+  inicio text not null default '',
+  fin text not null default '',
+  actualizado timestamptz not null default now()
+);
+create table if not exists public.doctorado_matriculas (
+  cedula text not null check (cedula ~ '^[0-9]{10}$'),
+  periodo_id text not null references public.doctorado_periodos(periodo_id),
+  carrera text not null default '' check (length(carrera) <= 120),
+  modalidad text not null default '' check (modalidad in ('','articulo','complexivo','trabajo')),
+  sede text not null default '' check (length(sede) <= 120),
+  fuente text not null default 'firebase_utet',
+  actualizado timestamptz not null default now(),
+  primary key (cedula, periodo_id)
+);
+create index if not exists doctorado_matriculas_periodo_idx on public.doctorado_matriculas(periodo_id);
+create table if not exists public.doctorado_asignaciones (
+  cedula text not null check (cedula ~ '^[0-9]{10}$'),
+  etapa text not null check (etapa in ('inicio','proceso','final','regulares')),
+  periodo_id text not null references public.doctorado_periodos(periodo_id),
+  fuente text not null check (fuente in ('automatica_unica','manual')),
+  actualizado timestamptz not null default now(),
+  primary key (cedula, etapa),
+  foreign key (cedula,periodo_id) references public.doctorado_matriculas(cedula,periodo_id)
+);
+create table if not exists public.doctorado_sync_estado (
+  origen text primary key,
+  ejecutado_en timestamptz,
+  estado text not null default 'pendiente',
+  detalle text not null default '',
+  estudiantes integer not null default 0,
+  matriculas integer not null default 0,
+  periodos integer not null default 0
+);
+insert into public.doctorado_sync_estado(origen) values ('firebase_utet')
+on conflict (origen) do nothing;
+alter table public.doctorado_respuestas add column if not exists periodo_id text not null default '';
+alter table public.doctorado_regulares add column if not exists periodo_id text not null default '';
