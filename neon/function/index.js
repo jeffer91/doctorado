@@ -182,6 +182,8 @@ async function manejar(req) {
           from ${tabla} t
           left join doctorado_asignaciones a on a.cedula = t.cedula
             and a.etapa = ${fase === "regulares" ? "'regulares'" : "t.etapa"}
+            and (a.fuente = 'manual' or
+              (select count(*) from doctorado_matriculas j where j.cedula = t.cedula) = 1)
           left join doctorado_matriculas m on m.cedula = t.cedula
             and m.periodo_id = coalesce(nullif(t.periodo_id, ''), a.periodo_id)`);
         return JSON.parse(filas[0][0]);
