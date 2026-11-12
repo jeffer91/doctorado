@@ -29,6 +29,13 @@ jobs:
           npm test
           npm run check
 
+      - name: Probar función Neon y compilar
+        working-directory: neon/function
+        run: |
+          npm ci
+          npm test
+          npm run build
+
       - name: Comprobar base principal (Neon)
         continue-on-error: true
         run: |
