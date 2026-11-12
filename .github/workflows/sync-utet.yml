@@ -1,6 +1,12 @@
 name: Sincronizar Firebase UTET con Neon
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/sync-utet.mjs'
+      - 'scripts/utet-normalizar.mjs'
+      - '.github/workflows/sync-utet.yml'
   schedule:
     - cron: '*/30 * * * *'
   workflow_dispatch:
@@ -26,6 +32,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Validar mapeo por período
+        run: node --test tests/utet-sync.test.js
       - name: Verificar que las credenciales estén configuradas
         if: env.FIREBASE_UTET_SERVICE_ACCOUNT_JSON == '' || env.NEON_DATABASE_URL == ''
         run: echo "::warning::Faltan credenciales privadas. Configura los secretos FIREBASE_UTET_SERVICE_ACCOUNT_JSON y NEON_DATABASE_URL."
