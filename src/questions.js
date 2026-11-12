@@ -8,7 +8,7 @@ export const STAGES = {
   final: { label: "Finalización", title: "Ya terminé" },
   // Grupo de comparación: estudiantes que no tuvieron la modalidad de artículo académico.
   regulares: {
-    label: "Examen o tesis", title: "Me gradúo por examen o tesis",
+    label: "Examen o trabajo de titulación", title: "Me gradúo por examen complexivo o trabajo de titulación",
     intro: "El artículo académico es una modalidad de titulación: un trabajo de investigación de 6 a 15 páginas."
   }
 };

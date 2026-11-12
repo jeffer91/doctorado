@@ -108,7 +108,7 @@ function panel() {
     ARTICULO.map(k => tile(k, count(k), STAGES[k].label)).join("") +
     tile("regulares", regs.length, STAGES.regulares.label, " full") + '</div>' +
     (data.length ? (reg ? chartsRegulares(data) : chartsArticulo(data)) : '<p class="lead">Aún no hay respuestas.</p>') +
-    '<section><h3>Exportar' + (reg ? " · examen o tesis" : " · artículo") + '</h3><div class="actions">' +
+    '<section><h3>Exportar' + (reg ? " · examen o trabajo de titulación" : " · artículo") + '</h3><div class="actions">' +
     '<button class="btn ghost" data-a="csv">CSV seudonimizado</button>' +
     '<button class="btn ghost" data-a="csvid">CSV con cédula</button></div></section>' +
     '<section><h3>Respaldo Firebase</h3><div class="actions"><button class="btn ghost" data-a="backup"' + (firebaseReady() ? "" : " disabled") + '>' + (firebaseReady() ? "Revisar respaldo" : "Firebase sin configurar") + '</button></div>' +
