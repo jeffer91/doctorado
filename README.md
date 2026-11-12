@@ -63,81 +63,78 @@ El CSV seudonimizado no incluye la cédula; el CSV con cédula sirve para vincul
 `npm test` y `npm run check` (sitio); `npm test` en `neon/function` (función, con Postgres embebido). Para ver el sitio en local: `python3 -m http.server` en la raíz.
 
 
-## Panel de administración organizado
+## Panel por período académico
 
-El panel en `#/admin` incorpora un menú lateral con:
+El panel privado `#/admin` exige seleccionar primero un período académico. El catálogo
+se obtiene de Neon, sincronizado desde Firebase UTET: **no se inventan períodos**.
+Después se habilitan los filtros de carrera, sede, fechas y búsqueda. Las vistas incluyen
+artículo (inicio/proceso/finalización), grupo de comparación (examen/trabajo),
+distribución por carrera y respuestas sin período.
 
-- Resumen general: estudiantes únicos, respuestas, etapas y modalidades.
-- Artículo académico: total, inicio, proceso y finalización.
-- Otras modalidades: grupo de comparación, examen complexivo, trabajo de titulación y pendientes de clasificar.
-- Análisis: tabla por carrera y registro de respuestas.
-- Gestión: clasificación administrativa, exportación CSV, respaldo y enlaces.
+El backend no mezcla automáticamente encuestas de un estudiante que tenga matrículas
+de varios períodos. En esos casos, el administrador puede asociar **una encuesta concreta**
+al período comprobado desde «Período pendiente». Esta asignación queda persistida
+en `doctorado_asignaciones` con fuente `manual`.
 
-Los filtros de carrera, rango de fechas y búsqueda por cédula/código se aplican
-a los módulos y a las exportaciones. La modalidad real es independiente de
-la **modalidad preferida** que el estudiante responde en el cuestionario.
+Las encuestas nuevas enviadas con el enlace
+`#/inicio?periodo=<id_real_del_periodo>` registran directamente el período en Neon.
+No se alteran las respuestas históricas ni se atribuyen períodos por suposición.
 
-### Clasificación de carreras y modalidad real
+## Fuente institucional Firebase UTET → base oficial Neon
 
-Las encuestas históricas no contienen carrera ni modalidad real. La información
-se mantiene separada de las respuestas en la tabla `doctorado_clasificacion`
-(creada por `neon/001_doctorado.sql`) y se asocia únicamente mediante cédula.
+- Firebase: proyecto `utet-4387a`, colección de períodos `periodos` y matrículas
+  `matriculas` (con lectura compatible de `EstudiantesPeriodo`).
+- Neon: `doctorado_periodos`, `doctorado_matriculas`,
+  `doctorado_asignaciones`, `doctorado_sync_estado`.
+- Coincidencias: solo cédulas que han respondido una encuesta; cada matrícula
+  tiene clave compuesta `(cedula,periodo_id)`.
+- Persistencia: las matrículas se insertan o actualizan en Neon por lotes,
+  sin sobreescribir las respuestas de investigación ni copiar datos de contacto.
+- Asignación histórica automática: solo si la cédula tiene una única matrícula
+  identificada. Las posibles ambigüedades quedan pendientes de confirmación.
+- No se usa la modalidad preferida indicada en la encuesta como si fuera la
+  modalidad real de titulación.
 
-Desde Administración → Configuración → «Clasificar estudiantes» pega los datos
-institucionales verificados en el formato:
+### Sincronización automática de servidor
 
-```text
-cedula;carrera;modalidad
-[cedula del estudiante];Enfermería;complexivo
-[cedula del estudiante];Software;articulo
-```
+Archivo: `.github/workflows/sync-utet.yml`. Se programa cada 30 minutos
+(incluso con el navegador cerrado) y admite ejecución manual desde Actions.
+El script `scripts/sync-utet.mjs` utiliza la API de Firestore con autorización
+de cuenta de servicio y la API SQL sobre HTTPS de Neon.
 
-Modalidades aceptadas: `articulo`, `complexivo`, `trabajo` (o vacía). Una fila
-por estudiante, máximo 500 por lote. La acción está protegida por autenticación
-administrativa, puede actualizar la clasificación sin cambiar las respuestas,
-y no deduce la modalidad real de la pregunta sobre preferencias.
+**Para activar las ejecuciones reales**, configurar en GitHub → Settings →
+Secrets and variables → Actions → Repository secrets:
 
-Si todavía no se ha cargado la clasificación, los registros se muestran
-como «Sin carrera» o «Sin clasificar». No deben interpretarse esos estados
-como ausencia de estudiantes en una carrera.
+1. `FIREBASE_UTET_SERVICE_ACCOUNT_JSON`: JSON de una **cuenta de servicio
+   dedicada**, con acceso de solo lectura a Firestore del proyecto `utet-4387a`
+   (p. ej. rol Cloud Datastore Viewer). No incluirla en Git ni en GitHub Pages.
+2. `NEON_DATABASE_URL`: cadena de conexión PostgreSQL para `doctorado-itsqmet`
+   mediante un rol autorizado para consultar las cédulas de las encuestas y
+   actualizar únicamente las tablas de sincronización.
+   
+Antes de agregar ambos secretos, el flujo se detiene sin importar estudiantes.
+Por seguridad, no utiliza reglas públicas ni el `apiKey` de la aplicación
+web para realizar una lectura administrativa.
 
+Después de configurar los secretos, abrir el flujo
+«Sincronizar Firebase UTET con Neon» en GitHub Actions, ejecutarlo y verificar
+que indique `Sincronización completada` con cantidades plausibles. La pantalla
+administrativa mostrará la fecha/estado del último cruce. Si no existen matrículas
+verificables, el proceso informa del error sin inventar carreras.
 
-## Vinculación con Firebase UTET (carreras y modalidades)
+### Seguridad
 
-El panel administrativo consulta de forma autenticada el proyecto `utet-4387a` 
-de Requisitos. La configuración web pública está en `src/config.js`, en la constante
-`UTET_FIREBASE`. **Esta conexión es distinta del respaldo de encuestas Firebase**.
+Las reglas `allow read, write: if true` son inseguras y deben corregirse
+en Firebase Console teniendo en cuenta los accesos de Requisitos. Ninguna regla
+más restrictiva anula una regla general que permita todo. La sincronización
+programada utiliza una identidad de servicio y permisos IAM; no requiere abrir
+Firestore al público.
 
-La integración lee únicamente documentos que corresponden a cédulas que respondieron:
-- `Estudiante` y `Estudiantes` (legado): carrera/sede actual.
-- `matriculas` y `EstudiantesPeriodo` (legado): carrera, sede, período y modalidad real.
+### Pruebas y despliegue
 
-El mapeo está en `src/utet-map.js`; la lectura Firebase en `src/firebase-utet.js`.
-No se importan nombres, correos, teléfonos ni calificaciones al panel doctoral.
-
-### Primer uso
-1. Firebase Console, proyecto UTET > Authentication: habilitar proveedor Google
-   y autorizar `jeffer91.github.io` como dominio permitido.
-2. Revisar las reglas de Firestore para que **solo el administrador autorizado**
-   pueda leer las colecciones utilizadas por Doctorado, sin afectar la app Requisitos.
-3. Abrir `#/admin`, ingresar a Neon, pulsar **Sincronizar ahora con Firebase UTET**
-   e iniciar sesión con Google usando el correo administrador.
-4. La aplicación cruza cédulas, guarda carreras y modalidades en
-   `doctorado_clasificacion` de Neon y permite ver las coincidencias.
-5. Después de la vinculación, vuelve a verificar datos al abrir el panel
-   y aproximadamente cada 15 minutos **mientras el panel esté abierto**.
-
-No existe una sincronización de servidor cuando el navegador está cerrado.
-Para eso sería necesario configurar un servicio backend con credenciales
-de acceso de mínimo privilegio a Firebase, nunca incrustadas en GitHub Pages.
-
-### Advertencia sobre reglas de Firestore
-Las reglas globales `allow read, write: if true` dejan datos institucionales
-expuestos a cualquier persona. **No utilizar estas reglas como autorización**;
-es necesario eliminarlas y definir permisos por colección y rol, comprobando
-primero todos los usos de Requisitos para no interrumpirla.
-Si una regla pública más general continúa vigente, una regla más restrictiva
-en otra ruta NO anula ese permiso.
-
-La sincronización administrativa jamás escribe en Firebase UTET, solo lee
-datos académicos y guarda la clasificación en Neon.
+- `npm test` y `npm run check` para frontend y mapeo de matrículas.
+- `cd neon/function && npm ci && npm test && npm run build` para la función.
+- GitHub Pages se publica al hacer push a `main`.
+- La función Neon se despliega por separado con el bundle generado en
+  `neon/function`; cambiar el código en GitHub no modifica automáticamente
+  la función publicada.
