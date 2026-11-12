@@ -52,6 +52,7 @@ function start() {
   if (!ready()) return page('<h1 tabindex="-1">' + esc(s.title) + '</h1><p class="lead">La encuesta no está disponible por ahora.</p>');
   page('<p class="eyebrow">Encuesta · ' + esc(s.label) + '</p><h1 tabindex="-1">' + esc(s.title) + '</h1>' +
     '<p class="lead">' + (s.intro ? esc(s.intro) + " " : "") + '10 preguntas · 3 minutos.</p>' +
+    (st.periodoId ? '<p class="note">Período académico: ' + esc(st.periodoId) + '</p>' : '') +
     '<form data-form="start" novalidate><label class="field">Cédula<input name="cedula" inputmode="numeric" autocomplete="off" maxlength="10" pattern="[0-9]{10}" placeholder="10 dígitos" value="' + esc(st.cedula) + '" required></label>' +
     '<p class="note">Participar es voluntario y no afecta tus notas ni tu titulación. Tus respuestas se usan solo para investigación; tu cédula se guarda protegida para vincular datos académicos.</p>' +
     '<label class="check"><input type="checkbox" name="consent"' + (st.consent ? " checked" : "") + '><span>Acepto participar</span></label>' +
@@ -130,7 +131,7 @@ root.addEventListener("click", async ev => {
     if (b.disabled) return;
     b.disabled = true; b.textContent = "Enviando…";
     try {
-      const result = await submitSurvey(toRow(st.stage, st.cedula, st.answers));
+      const result = await submitSurvey({ ...toRow(st.stage, st.cedula, st.answers), periodoId: st.periodoId || "" });
       const at = new Date().toLocaleString("es-EC", { dateStyle: "medium", timeStyle: "short" });
       const stage = st.stage;
       st = { stage, done: { dup: result === "dup", at } };
@@ -177,7 +178,15 @@ async function router() {
     const { renderAdmin } = await import("./admin.js");
     return renderAdmin(root);
   }
-  if (STAGES[r]) { st = load(r); return render(); }
+  if (STAGES[r]) {
+    st = load(r);
+    const periodo = new URLSearchParams(location.hash.split("?")[1] || "").get("periodo") || "";
+    if (periodo && periodo.length <= 120 && !/[\\x00-\\x1f]/.test(periodo)) {
+      st.periodoId = periodo;
+      save();
+    }
+    return render();
+  }
   home();
 }
 window.addEventListener("hashchange", router);
