@@ -38,6 +38,8 @@ export async function renderAdmin(el) {
     return frame('<h1>Panel</h1><p class="lead">No se pudieron cargar los datos. Recarga la página.</p>');
   }
   panel();
+  // Precarga Authentication para que la ventana de Google se abra desde el clic.
+  void sesionUtet().catch(() => {});
   // Sincronización automática al abrir el panel, solo tras vincular Google una vez.
   // No se muestra ninguna ventana emergente sin interacción del administrador.
   if (sessionStorage.getItem("doctorado:utet-linked") === "1") void sincronizarUtet(false, true);
