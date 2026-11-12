@@ -160,8 +160,32 @@ async function manejar(req) {
 
     if (ruta === "GET /admin/respuestas") {
       const leer = async tabla => JSON.parse((await q(
-        `select coalesce(json_agg(to_jsonb(t) - 'id' order by t.created_at desc), '[]')::text from ${tabla} t`))[0][0]);
+        `select coalesce(json_agg((to_jsonb(t) - 'id') ||
+           jsonb_build_object('carrera', coalesce(cl.carrera, ''),
+                              'modalidad', coalesce(cl.modalidad, ''))
+           order by t.created_at desc), '[]')::text
+         from ${tabla} t left join doctorado_clasificacion cl on cl.cedula = t.cedula`))[0][0]);
       return json(req, 200, { filas: await leer("doctorado_respuestas"), regulares: await leer("doctorado_regulares") });
+    }
+    if (ruta === "POST /admin/clasificar") {
+      const filas = (await body(req)).filas;
+      if (!Array.isArray(filas) || filas.length === 0 || filas.length > 500) return json(req, 400, { error: "invalida" });
+      const datos = filas.map(x => ({
+        cedula: typeof x?.cedula === "string" ? x.cedula.trim() : "",
+        carrera: typeof x?.carrera === "string" ? x.carrera.trim() : "",
+        modalidad: typeof x?.modalidad === "string" ? x.modalidad.trim().toLowerCase() : ""
+      }));
+      if (datos.some(x => !/^\\d{10}$/.test(x.cedula) || x.carrera.length > 120 ||
+          !["", "articulo", "complexivo", "trabajo"].includes(x.modalidad) || (!x.carrera && !x.modalidad)))
+        return json(req, 400, { error: "clasificacion_invalida" });
+      for (const x of datos) {
+        await q(`insert into doctorado_clasificacion (cedula, carrera, modalidad)
+          values ($1, $2, $3)
+          on conflict (cedula) do update set
+          carrera = excluded.carrera, modalidad = excluded.modalidad, actualizado = now()`,
+          x.cedula, x.carrera, x.modalidad);
+      }
+      return json(req, 200, { guardadas: datos.length });
     }
     if (ruta === "POST /admin/clave") {
       const nueva = String((await body(req)).nueva || "");

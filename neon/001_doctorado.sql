@@ -123,3 +123,11 @@ create table if not exists public.doctorado_regulares (
 drop trigger if exists doctorado_preparar on public.doctorado_regulares;
 create trigger doctorado_preparar before insert on public.doctorado_regulares
 for each row execute function public.doctorado_preparar();
+
+-- Clasificación administrativa para carreras y modalidad real; no altera respuestas originales.
+create table if not exists public.doctorado_clasificacion (
+  cedula text primary key check (cedula ~ '^[0-9]{10}$'),
+  carrera text not null default '' check (char_length(carrera) <= 120),
+  modalidad text not null default '' check (modalidad in ('','articulo','complexivo','trabajo')),
+  actualizado timestamptz not null default now()
+);

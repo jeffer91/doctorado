@@ -75,3 +75,17 @@ test("bloqueo tras muchos intentos fallidos", async () => {
   for (let i = 0; i < 9; i++) last = (await call("POST", "/admin/login", { email: "x@y.z", clave: "no" })).status;
   assert.equal(last, 429);
 });
+
+test("clasificación por carrera y modalidad sin modificar encuestas", async () => {
+  const { token } = await (await call("POST", "/admin/login", { email: "a@b.c", clave: "otraclave99" })).json();
+  const body = { filas: [{ cedula: "1710034065", carrera: "Enfermería", modalidad: "complexivo" }] };
+  assert.equal((await call("POST", "/admin/clasificar", body)).status, 401);
+  assert.equal((await call("POST", "/admin/clasificar", { filas: [{ ...body.filas[0], modalidad: "no-real" }] }, token)).status, 400);
+  const res = await call("POST", "/admin/clasificar", body, token);
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).guardadas, 1);
+  const data = await (await call("GET", "/admin/respuestas", null, token)).json();
+  assert.equal(data.filas[0].carrera, "Enfermería");
+  assert.equal(data.regulares[0].modalidad, "complexivo");
+  assert.equal(data.filas[0].se1, 1);
+});
