@@ -29,6 +29,15 @@ jobs:
           npm test
           npm run check
 
+      - name: Comprobar base principal (Neon)
+        continue-on-error: true
+        run: |
+          API=$(node -e "import('./src/config.js').then(m=>console.log(m.API))")
+          echo "Salud: $(curl -sS -m 30 "$API/salud")"
+          echo "Respuesta inválida (se espera 400): $(curl -sS -m 30 -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H 'Origin: https://jeffer91.github.io' -d '{}' "$API/respuestas")"
+          echo "Acceso sin sesión (se espera 401): $(curl -sS -m 30 -o /dev/null -w '%{http_code}' "$API/admin/respuestas")"
+          echo "CORS: $(curl -sS -m 30 -o /dev/null -D - -X OPTIONS -H 'Origin: https://jeffer91.github.io' -H 'Access-Control-Request-Method: POST' "$API/respuestas" | grep -i 'access-control-allow-origin')"
+
       - name: Preparar sitio estático
         env:
           FIREBASE_WEB_CONFIG: ${{ secrets.FIREBASE_WEB_CONFIG }}

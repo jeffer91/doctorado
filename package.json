@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Encuestas de titulación por etapas y panel de investigación",
   "scripts": {
-    "test": "node --test",
+    "test": "node --test tests/*.test.js",
     "check": "node --check src/config.js && node --check src/questions.js && node --check src/firebase.js && node --check src/store.js && node --check src/admin.js && node --check src/app.js"
   }
 }

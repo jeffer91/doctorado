@@ -1,7 +1,7 @@
 # Encuestas de titulación · ITSQMET
 
 Tres encuestas de 10 preguntas (inicio, en proceso, finalización) y un panel privado.
-Sitio estático en GitHub Pages. Base principal: **Supabase**. Respaldo: **Firebase**.
+Sitio estático en GitHub Pages. Base principal: **Neon**. Respaldo: **Firebase** (y Supabase, opcional).
 
 ## Enlaces
 
@@ -13,18 +13,20 @@ Sitio estático en GitHub Pages. Base principal: **Supabase**. Respaldo: **Fireb
 ## Cómo funciona
 
 1. El estudiante escribe su cédula, acepta participar y responde una pregunta por pantalla.
-2. La respuesta se guarda en Supabase y, además, una copia en Firebase.
-   Si una de las dos falla, la otra conserva el registro.
+2. La respuesta se guarda en Neon y, además, una copia en cada respaldo configurado.
+   Si la principal falla, el respaldo conserva el registro.
 3. Solo se admite una respuesta por cédula y etapa; no se puede modificar ni borrar.
-4. El panel lee Supabase. «Revisar respaldo» compara con Firebase y recupera lo que falte.
+4. El panel lee Neon. «Revisar respaldo» compara con Firebase y recupera lo que falte.
 
-## Supabase (principal)
+## Neon (principal)
 
-- Esquema: `supabase/migrations/001_doctorado.sql`.
-- Tabla `doctorado_respuestas`: el público solo puede insertar; solo el administrador puede leer (RLS).
-- `codigo` es un seudónimo estable por cédula (sal secreta en `doctorado_priv.config`): permite unir etapas sin exponer la cédula.
-- La URL y la clave pública van en `src/config.js` (no son secretas).
-- Administradores: correos en `doctorado_priv.admins`, con usuario en Supabase Auth.
+- Proyecto `doctorado-itsqmet`. Esquema: `neon/001_doctorado.sql`.
+- Nadie accede a las tablas desde el navegador. Todo pasa por la función `encuestas`
+  (`neon/function/index.js`), cuya dirección está en `src/config.js`:
+  - `POST /respuestas`: valida y guarda (201) o avisa que ya existe (409).
+  - `/admin/*`: acceso con correo y contraseña (bcrypt), sesión de 12 horas y bloqueo tras 8 intentos fallidos.
+- `codigo` es un seudónimo estable por cédula (sal secreta en `doctorado_config`): une etapas sin exponer la cédula.
+- Para publicar cambios de la función: `npm run build` en `neon/function` y desplegar `dist/index.mjs` en un zip.
 
 ## Firebase (respaldo)
 
@@ -32,7 +34,11 @@ Sitio estático en GitHub Pages. Base principal: **Supabase**. Respaldo: **Fireb
 2. Authentication: habilitar **Anónimo** y **Google**; autorizar el dominio `jeffer91.github.io`.
 3. Firestore Rules: insertar el bloque de `firestore.reglas-insertar.txt` (sin reemplazar las reglas existentes).
 
-Sin estos pasos la app funciona solo con Supabase.
+Sin estos pasos la app funciona solo con Neon.
+
+## Supabase (respaldo opcional)
+
+Aplicar `supabase/migrations/001_doctorado.sql` en un proyecto y poner su URL y clave pública en `SUPABASE` de `src/config.js`.
 
 ## Datos
 
@@ -48,4 +54,4 @@ El CSV seudonimizado no incluye la cédula; el CSV con cédula sirve para vincul
 
 ## Desarrollo
 
-`npm test` y `npm run check`. Para ver el sitio en local: `python3 -m http.server` en la raíz.
+`npm test` y `npm run check` (sitio); `npm test` en `neon/function` (función, con Postgres embebido). Para ver el sitio en local: `python3 -m http.server` en la raíz.

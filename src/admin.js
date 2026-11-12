@@ -1,19 +1,24 @@
-// src/admin.js — Panel privado. Lee de Supabase (principal) y revisa el respaldo de Firebase.
-import { SUPABASE, ADMIN_EMAIL } from "./config.js";
-import { STAGES, FRECUENCIA, DIFICULTADES, IDS } from "./questions.js";
+// src/admin.js — Panel privado. Lee de Neon (principal) y revisa el respaldo de Firebase.
+import { API, ADMIN_EMAIL } from "./config.js";
+import { STAGES, FRECUENCIA, DIFICULTADES } from "./questions.js";
 import { firebaseReady, fetchBackup, firebaseError } from "./firebase.js";
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const TABLE = "doctorado_respuestas";
 const COLS = ["codigo", "etapa", "created_at", "version", "se1", "se2", "se3", "se4", "se5", "p6", "p7", "horas", "horas_ns", "dificultad", "dificultad_otra", "ia", "omitidas", "origen"];
-let sb = null, root = null, rows = [], filter = "todas", msg = "";
+const KEY = "doctorado:admin";
+let root = null, rows = [], filter = "todas", msg = "";
 
-async function client() {
-  if (!sb) {
-    const { createClient } = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
-    sb = createClient(SUPABASE.url, SUPABASE.key);
-  }
-  return sb;
+const token = () => { try { return sessionStorage.getItem(KEY); } catch { return null; } };
+const setToken = t => { try { t ? sessionStorage.setItem(KEY, t) : sessionStorage.removeItem(KEY); } catch { /* sin almacenamiento */ } };
+
+// Llama a la función de Neon. Lanza un error con .status si la respuesta no es correcta.
+async function api(path, body) {
+  const headers = {};
+  if (token()) headers.Authorization = "Bearer " + token();
+  if (body) headers["Content-Type"] = "application/json";
+  const res = await fetch(API + path, { method: body ? "POST" : "GET", headers, body: body ? JSON.stringify(body) : undefined });
+  if (!res.ok) throw Object.assign(new Error("HTTP " + res.status), { status: res.status });
+  return res.json();
 }
 function frame(inner) {
   root.innerHTML = '<header class="top"><span></span><span class="brand">ITSQMET · Administración</span><span></span></header><main class="wrap wide">' + inner + '</main>';
@@ -21,17 +26,17 @@ function frame(inner) {
 
 export async function renderAdmin(el) {
   root = el;
-  if (!SUPABASE.url || !SUPABASE.key) return frame('<h1>Panel</h1><p class="lead">Falta conectar Supabase.</p>');
-  const c = await client();
-  const { data } = await c.auth.getSession();
-  if (!data.session) return login();
-  const { data: ok } = await c.rpc("doctorado_soy_admin");
-  if (!ok) return login("Esta cuenta no tiene acceso.", true);
-  try { await loadRows(); } catch { return frame('<h1>Panel</h1><p class="lead">No se pudieron cargar los datos. Recarga la página.</p>'); }
+  if (!API) return frame('<h1>Panel</h1><p class="lead">Falta conectar la base de datos.</p>');
+  if (!token()) return login();
+  try { await loadRows(); }
+  catch (e) {
+    if (e.status === 401) { setToken(null); return login("La sesión terminó. Entra de nuevo."); }
+    return frame('<h1>Panel</h1><p class="lead">No se pudieron cargar los datos. Recarga la página.</p>');
+  }
   panel();
 }
 
-function login(error = "", signedIn = false) {
+function login(error = "") {
   frame('<h1>Panel</h1><form id="login" novalidate>' +
     '<label class="field">Correo<input name="email" type="email" autocomplete="username" value="' + esc(ADMIN_EMAIL) + '" required></label>' +
     '<label class="field">Contraseña<input name="password" type="password" autocomplete="current-password" required></label>' +
@@ -41,24 +46,17 @@ function login(error = "", signedIn = false) {
     ev.preventDefault();
     const f = new FormData(ev.target), btn = ev.target.querySelector("button");
     btn.disabled = true; btn.textContent = "Entrando…";
-    const c = await client();
-    if (signedIn) await c.auth.signOut();
-    const { error: e } = await c.auth.signInWithPassword({ email: String(f.get("email")).trim(), password: String(f.get("password")) });
-    if (e) return login("Correo o contraseña incorrectos.");
-    renderAdmin(root);
+    try {
+      const r = await api("/admin/login", { email: String(f.get("email")).trim(), clave: String(f.get("password")) });
+      setToken(r.token);
+      renderAdmin(root);
+    } catch (e) {
+      login(e.status === 401 ? "Correo o contraseña incorrectos." : e.status === 429 ? "Demasiados intentos. Espera 15 minutos." : "No se pudo conectar. Inténtalo de nuevo.");
+    }
   });
 }
 
-async function loadRows() {
-  const c = await client();
-  rows = [];
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await c.from(TABLE).select("*").order("created_at", { ascending: false }).range(from, from + 999);
-    if (error) throw error;
-    rows.push(...data);
-    if (data.length < 1000) break;
-  }
-}
+async function loadRows() { rows = (await api("/admin/respuestas")).filas; }
 
 const mean = a => a.length ? a.reduce((x, y) => x + Number(y), 0) / a.length : null;
 const fmt = n => n === null ? "—" : n.toFixed(1).replace(".", ",");
@@ -113,43 +111,36 @@ async function onClick(ev) {
     catch { prompt("Copia el enlace:", b.dataset.copy); }
     return;
   }
-  const c = await client();
   switch (b.dataset.a) {
-    case "out": await c.auth.signOut(); rows = []; return login();
-    case "reload": await loadRows(); return panel();
+    case "out": try { await api("/admin/salir", {}); } catch { /* sesión ya cerrada */ } setToken(null); rows = []; return login();
+    case "reload": return renderAdmin(root);
     case "csv": return csv(false);
     case "csvid": return confirm("Este archivo incluye cédulas. Guárdalo en un lugar seguro.") && csv(true);
     case "pass": {
       const p = prompt("Nueva contraseña (mínimo 8 caracteres):");
       if (!p) return;
       if (p.length < 8) return alert("Debe tener al menos 8 caracteres.");
-      const { error } = await c.auth.updateUser({ password: p });
-      return alert(error ? "No se pudo cambiar: " + error.message : "Contraseña actualizada.");
+      try { await api("/admin/clave", { nueva: p }); alert("Contraseña actualizada."); }
+      catch { alert("No se pudo cambiar la contraseña."); }
+      return;
     }
     case "backup": return backup(b);
   }
 }
 
-// Compara Firebase con Supabase y recupera en Supabase lo que solo esté en el respaldo.
+// Compara Firebase con Neon y recupera en Neon lo que solo esté en el respaldo.
 async function backup(b) {
   b.disabled = true; say("Revisando…");
   try {
     const copies = await fetchBackup();
     const have = new Set(rows.map(r => r.etapa + "|" + r.cedula));
     const missing = copies.filter(x => !have.has(x.etapa + "|" + x.cedula));
-    if (!missing.length) return say("Firebase: " + copies.length + " · Supabase: " + rows.length + ". Nada por recuperar.");
-    if (!confirm("Hay " + missing.length + " respuesta(s) solo en Firebase. ¿Copiarlas a Supabase?")) return say("Faltan " + missing.length + " en Supabase.");
-    const c = await client();
+    if (!missing.length) return say("Firebase: " + copies.length + " · Neon: " + rows.length + ". Nada por recuperar.");
+    if (!confirm("Hay " + missing.length + " respuesta(s) solo en Firebase. ¿Copiarlas a Neon?")) return say("Faltan " + missing.length + " en Neon.");
     let ok = 0;
-    for (const x of missing) {
-      const row = { etapa: x.etapa, cedula: x.cedula, version: 1, origen: "firebase" };
-      for (const k of [...IDS, "horas_ns", "dificultad_otra", "omitidas"]) row[k] = x[k] ?? (k === "omitidas" ? [] : k === "horas_ns" ? false : null);
-      if (x.created_at) row.created_at = x.created_at;
-      const { error } = await c.from(TABLE).insert(row);
-      if (!error) ok++;
-    }
+    for (let i = 0; i < missing.length; i += 200) ok += (await api("/admin/importar", { filas: missing.slice(i, i + 200) })).guardadas;
     await loadRows(); msg = "Recuperadas " + ok + " de " + missing.length + "."; panel();
-  } catch (e) { say(firebaseError(e)); }
+  } catch (e) { say(e.status ? "No se pudo copiar a Neon." : firebaseError(e)); }
   finally { b.disabled = false; }
 }
 

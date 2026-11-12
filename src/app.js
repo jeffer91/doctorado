@@ -6,6 +6,7 @@ const root = document.getElementById("app");
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const NR = "NR", NS = "NS";
 let st = null; // estado de la encuesta en curso
+let busy = false; // evita que un doble toque avance dos preguntas
 
 function route() {
   const r = (location.hash.replace(/^#\/?/, "").split("?")[0] || "").toLowerCase();
@@ -115,13 +116,15 @@ root.addEventListener("click", async ev => {
   if (b.dataset.act === "back") { st.editing = false; return go(st.step - 1); }
   if (b.dataset.go !== undefined) { st.editing = true; return go(+b.dataset.go); }
   if (b.dataset.val !== undefined) {
+    if (busy) return;
     const q = QUESTIONS[st.stage][st.step];
     st.answers[q.id] = b.dataset.val;
     if (q.id === "dificultad" && b.dataset.val !== "otra") delete st.answers.dificultad_otra;
     save();
     if (q.id === "dificultad" && b.dataset.val === "otra") return render();
     root.querySelectorAll("[data-val]").forEach(x => x.classList.toggle("on", x === b));
-    return setTimeout(next, 160);
+    busy = true;
+    return setTimeout(() => { busy = false; next(); }, 160);
   }
   if (b.dataset.act === "send") {
     if (b.disabled) return;

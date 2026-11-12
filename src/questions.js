@@ -85,7 +85,7 @@ export function cedulaValida(c) {
 // Convierte las respuestas del formulario en la fila que se guarda.
 // answers[id] = valor | "NR" (prefiero no responder) | "NS" (solo horas: no sabe).
 export function toRow(stage, cedula, answers) {
-  const row = { etapa: stage, cedula, version: VERSION, horas_ns: false, omitidas: [] };
+  const row = { etapa: stage, cedula, horas_ns: false, omitidas: [] };
   for (const id of IDS) {
     const v = answers[id];
     if (v === undefined || v === "") throw new Error("Falta responder una pregunta.");

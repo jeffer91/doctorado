@@ -51,7 +51,7 @@ export async function fetchBackup() {
   const snap = await f.getDocs(f.query(f.collection(db, COL), f.where("schemaVersion", "==", 2)));
   return snap.docs.map(d => {
     const x = d.data();
-    return { etapa: x.etapa, cedula: x.cedula, version: 1, ...x.r, created_at: x.createdAt?.toDate?.().toISOString() };
+    return { etapa: x.etapa, cedula: x.cedula, ...x.r, created_at: x.createdAt?.toDate?.().toISOString() };
   });
 }
 
