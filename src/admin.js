@@ -22,7 +22,8 @@ async function api(path, body) {
   return res.json();
 }
 function frame(inner) {
-  root.innerHTML = '<header class="top"><span></span><span class="brand">ITSQMET · Administración</span><span></span></header><main class="wrap wide">' + inner + '</main>';
+  root.innerHTML = '<header class="top"><span></span><img class="logo" src="./assets/logo.webp" alt="ITSQMET" width="720" height="211"><span></span><div class="bar"></div></header>' +
+    '<main class="wrap wide"><p class="eyebrow">Administración</p>' + inner + '</main>';
 }
 
 export async function renderAdmin(el) {

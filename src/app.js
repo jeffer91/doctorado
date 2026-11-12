@@ -25,9 +25,9 @@ function clear(stage) { try { sessionStorage.removeItem(key(stage)); } catch { /
 
 function page(inner, { progress = null, back = false } = {}) {
   root.innerHTML =
-    '<div class="bar"><i style="width:' + (progress === null ? 0 : Math.round(progress * 100)) + '%"></i></div>' +
     '<header class="top">' + (back ? '<button class="back" data-act="back" aria-label="Atrás">←</button>' : '<span></span>') +
-    '<span class="brand">ITSQMET · Titulación</span><span></span></header>' +
+    '<img class="logo" src="./assets/logo.webp" alt="ITSQMET" width="720" height="211"><span></span>' +
+    '<div class="bar"><i style="width:' + (progress === null ? 0 : Math.round(progress * 100)) + '%"></i></div></header>' +
     '<main class="wrap">' + inner + '</main>';
   root.querySelector("h1,h2")?.focus?.();
   window.scrollTo(0, 0);
