@@ -175,7 +175,7 @@ async function manejar(req) {
         carrera: typeof x?.carrera === "string" ? x.carrera.trim() : "",
         modalidad: typeof x?.modalidad === "string" ? x.modalidad.trim().toLowerCase() : ""
       }));
-      if (datos.some(x => !/^\\d{10}$/.test(x.cedula) || x.carrera.length > 120 ||
+      if (datos.some(x => !/^[0-9]{10}$/.test(x.cedula) || x.carrera.length > 120 ||
           !["", "articulo", "complexivo", "trabajo"].includes(x.modalidad) || (!x.carrera && !x.modalidad)))
         return json(req, 400, { error: "clasificacion_invalida" });
       for (const x of datos) {
