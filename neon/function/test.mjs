@@ -85,8 +85,12 @@ test("clasificación por carrera y modalidad sin modificar encuestas", async () 
   assert.equal(res.status, 200);
   assert.equal((await res.json()).guardadas, 1);
   const data = await (await call("GET", "/admin/respuestas", null, token)).json();
-  assert.equal(data.filas[0].carrera, "Enfermería");
-  assert.equal(data.regulares.find(x => x.cedula === body.filas[0].cedula).modalidad, "complexivo");
+  // La clasificación antigua permanece almacenada, pero no debe contaminar
+  // respuestas sin período académico confirmado.
+  const almacenada = await db.query("select carrera,modalidad from doctorado_clasificacion where cedula=$1",[body.filas[0].cedula]);
+  assert.deepEqual(almacenada.rows[0], {carrera:"Enfermería",modalidad:"complexivo"});
+  assert.equal(data.filas[0].carrera,"");
+  assert.equal(data.regulares.find(x => x.cedula === body.filas[0].cedula).modalidad,"");
   assert.equal(data.filas[0].se1, 1);
 });
 
