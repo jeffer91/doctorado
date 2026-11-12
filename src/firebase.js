@@ -28,7 +28,8 @@ export async function backupSurvey(row) {
   const { f, u, db, auth } = await sdk();
   if (auth.currentUser && !auth.currentUser.isAnonymous) await u.signOut(auth);
   const user = auth.currentUser || (await u.signInAnonymously(auth)).user;
-  const { etapa, cedula, ...r } = row;
+  // El respaldo conserva el esquema anterior; Neon guarda el período oficial.
+  const { etapa, cedula, periodoId, ...r } = row;
   await f.setDoc(f.doc(db, COL, await docId(etapa, cedula)), {
     etapa, cedula, r, consent: true,
     schemaVersion: 2, anonUid: user.uid, createdAt: f.serverTimestamp()
